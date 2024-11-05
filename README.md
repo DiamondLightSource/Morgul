@@ -277,3 +277,11 @@ Data files are expected to be a separate HDF5 file for each module, each  with t
             unique module for matching to gain and calibration data.
 /row        Same as column, but row position.
 ```
+
+# CUDA Morgul
+
+Requires a base environment e.g.:
+
+```
+mamba create -p ENV cxx-compiler boost hdf5 hdf5-external-filter-plugins pybind11 cmake zstd bitshuffle lodepng
+```
