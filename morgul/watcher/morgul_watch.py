@@ -12,9 +12,9 @@ from typing import IO, Annotated, Any
 import dateutil.tz as tz
 import h5py
 import typer
+from watchdir import Watcher
 
 from morgul.util import NC, B, G, R
-from watchdir import Watcher
 
 logger = logging.getLogger(__name__)
 

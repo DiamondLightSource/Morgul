@@ -1,4 +1,3 @@
----
 BasedOnStyle: Google
 ---
 Language: Cpp
@@ -26,4 +25,3 @@ IndentCaseLabels: false
 NamespaceIndentation: Inner
 SortIncludes: true
 ReflowComments: false
----

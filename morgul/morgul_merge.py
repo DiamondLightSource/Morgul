@@ -19,7 +19,7 @@ def merge(
 ):
     """Merge split modules into single modules"""
     rows: dict[int, h5py.File] = {}
-    filenames: dict[int, str] = {}
+    filenames: dict[int, Path] = {}
     columns: set[int] = set()
 
     # Read and validate all the input files
