@@ -57,7 +57,6 @@ class CUDAArgumentParser;
 struct CUDAArguments {
   public:
     bool verbose = false;
-    std::string file;
 
     int device_index = 0;
     std::optional<size_t> image_number;
@@ -84,13 +83,6 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
             .action([&](const std::string &value) {
                 _arguments.device_index = std::stoi(value);
                 return _arguments.device_index;
-            });
-        this->add_argument("--image")
-            .help("Single image number to analyse, if not all")
-            .metavar("NUM")
-            .action([&](const std::string &value) {
-                _arguments.image_number = std::stoi(value);
-                return _arguments.image_number;
             });
         this->add_argument("--list-devices")
             .help("List the order of CUDA devices, then quit.")
@@ -177,16 +169,17 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
                    _arguments.device.major,
                    _arguments.device.minor);
 
-#ifdef HAS_HDF5
         // If we activated h5read, then handle hdf5 verbosity
-        if (_activated_h5read && !_arguments.verbose) {
-            _hdf5::H5Eset_auto((_hdf5::hid_t)0, NULL, NULL);
-        }
-#endif
+        // if (_activated_h5read && !_arguments.verbose) {
+        //     _hdf5::H5Eset_auto((_hdf5::hid_t)0, NULL, NULL);
+        // }
 
         return _arguments;
     }
 
+    auto cuda_arguments() {
+        return _arguments;
+    }
     // void add_h5read_arguments() {
     //     bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
 
@@ -206,7 +199,6 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 
   private:
     CUDAArguments _arguments{};
-    bool _activated_h5read = false;
 };
 
 template <typename T>

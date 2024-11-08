@@ -7,9 +7,7 @@ set(CMAKE_CUDA_STANDARD 20)
 
 project(morgul LANGUAGES CXX CUDA)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
@@ -47,11 +45,16 @@ find_package(CUDAToolkit REQUIRED)
 find_package(HDF5 REQUIRED)
 find_package(lodepng REQUIRED)
 
-add_executable(morgul-cuda cuda/process.cxx)
+add_executable(
+    morgul-cuda
+    cuda/main.cxx
+    cuda/correct.cxx
+)
 target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_link_libraries(
     morgul-cuda
     PRIVATE
+    argparse
     CUDA::cudart
     fmt
     hdf5::hdf5
