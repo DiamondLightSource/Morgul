@@ -19,10 +19,7 @@
 #include "constants.hpp"
 
 using namespace fmt;
-// using namespace date;
-// using namespace std;
-// using namespace date;
-// using namespace
+
 struct CalibrationData {
     std::filesystem::path pedestal;
     std::filesystem::path mask;
@@ -107,7 +104,10 @@ auto get_applicable_calibration(float exposure_time, uint64_t timestamp)
 }
 
 auto do_correct(Arguments &args) -> void {
-    print("Running correction parser:\n");
+    print(
+        "        ____ ___   ____  ____ ___  ____ / /_\n"
+        "       / __// _ \\ / __/ / __// -_)/ __// __/\n"
+        "       \\__/ \\___//_/   /_/   \\__/ \\__/ \\__/\n");
     auto cal = get_applicable_calibration(0.001, 1731413311);
 
     // mt::styled(1.23, fmt::fg(fmt::color::green)
