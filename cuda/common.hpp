@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <fmt/color.h>
 #include <fmt/core.h>
 
 #include <algorithm>
@@ -9,6 +10,13 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+
+// Setting up some common printing styles
+struct style {
+    static constexpr auto warning =
+        fmt::emphasis::bold | fmt::fg(fmt::terminal_color::yellow);
+    static constexpr auto path = fmt::fg(fmt::terminal_color::magenta);
+};
 
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)

@@ -1,5 +1,6 @@
 #include <date/date.h>
 #include <fmt/chrono.h>
+#include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <fmt/std.h>
@@ -14,6 +15,7 @@
 #include <sstream>
 
 #include "commands.hpp"
+#include "common.hpp"
 #include "constants.hpp"
 
 using namespace fmt;
@@ -36,7 +38,8 @@ auto get_applicable_calibration(float exposure_time, uint64_t timestamp)
     }
 
     const auto ts_latest = std::chrono::sys_time(std::chrono::seconds(timestamp));
-    print("Searching for calibration points before {}\n", ts_latest);
+    // print("Calibration time point: {}\n",
+    //       fmt::styled(ts_latest, fg(fmt::terminal_color::cyan)));
     std::string record_kind, record_timestamp;
     std::filesystem::path record_path;
     float record_exposure;
@@ -90,9 +93,16 @@ auto get_applicable_calibration(float exposure_time, uint64_t timestamp)
     if (!most_recent_mask) {
         throw std::runtime_error("Error: Could not find a matching mask calibration");
     }
+    if (ts_latest - std::get<0>(most_recent_pedestal.value())
+        > std::chrono::hours(24)) {
+        print(style::warning,
+              "Warning: Calibration time point is over 24 hours older than data. "
+              "Continuing, but this might not work well.\n");
+    }
     return {
         .pedestal = std::get<1>(most_recent_pedestal.value()),
         .mask = std::get<1>(most_recent_mask.value()),
+        .gain = GAIN_MAPS,
     };
 }
 
@@ -100,9 +110,10 @@ auto do_correct(Arguments &args) -> void {
     print("Running correction parser:\n");
     auto cal = get_applicable_calibration(0.001, 1731413311);
 
-    print("Using Mask:     {}\n", cal.mask);
-    print("Using Pedestal: {}\n", cal.pedestal);
-    print("Using Gains:    {}\n", cal.gain);
+    // mt::styled(1.23, fmt::fg(fmt::color::green)
+    print("Using Mask:     {}\n", fmt::styled(cal.mask, style::path));
+    print("Using Pedestal: {}\n", fmt::styled(cal.pedestal, style::path));
+    print("Using Gains:    {}\n", fmt::styled(cal.gain, style::path));
 
     // for (auto &src : args.sources) {
     //     print(" - {}\n", src);
