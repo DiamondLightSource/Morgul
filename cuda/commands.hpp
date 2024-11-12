@@ -9,6 +9,7 @@ struct Arguments {
 
     std::string command;
     std::vector<std::string> sources;
+    std::string detector;
 };
 
 auto do_correct(Arguments &args) -> void;

@@ -38,6 +38,12 @@ FetchContent_Declare(
     GIT_TAG 68fd0277eea5412aff9b91c0b70efc698359dae0 # 6.3.1
 )
 FetchContent_MakeAvailable(argparse)
+FetchContent_Declare(
+    date_src
+    GIT_REPOSITORY https://github.com/HowardHinnant/date.git
+    GIT_TAG        v3.0.3
+)
+FetchContent_MakeAvailable(date_src)
 
 find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
@@ -60,4 +66,5 @@ target_link_libraries(
     hdf5::hdf5
     nlohmann_json::nlohmann_json
     lodepng
+    date::date
 )
