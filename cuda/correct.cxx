@@ -4,6 +4,8 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <fmt/std.h>
+#include <hdf5.h>
+#include <pybind11/pybind11.h>
 
 #include <chrono>
 #include <cstdlib>
@@ -18,16 +20,20 @@
 #include "common.hpp"
 #include "constants.hpp"
 
+// namespace py = pybind11;
+//
 using namespace fmt;
+// using namespace H5;
 
-struct CalibrationData {
+struct CalibrationDataPath {
     std::filesystem::path pedestal;
     std::filesystem::path mask;
     std::filesystem::path gain;
 };
 
-auto get_applicable_calibration(float exposure_time, uint64_t timestamp)
-    -> CalibrationData {
+/// Read the calibration log to find the correct calibration data sets
+auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
+    -> CalibrationDataPath {
     const auto calibration_log = std::getenv("JUNGFRAU_CALIBRATION_LOG");
     if (calibration_log == nullptr) {
         throw std::runtime_error(
@@ -103,17 +109,44 @@ auto get_applicable_calibration(float exposure_time, uint64_t timestamp)
     };
 }
 
+class PedestalData {
+  public:
+    PedestalData(std::filesystem::path path, Detector detector) : _path(path) {
+        // auto file = H5File(path, H5F_ACC_RDONLY);
+        hid_t file = H5I_INVALID_HID;
+
+        if (file =
+                H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT) == H5I_INVALID_HID) {
+            throw std::runtime_error("Failed to open Pedestal file");
+        }
+        // We want to support two forms of pedestal file;
+        // Original Morgul:
+        // - <ModuleName>/pedestal_{0,1,2} (1024x512)
+        // HMI Morgul
+        // - HMI_ID/pedestal_{0,1,2} (1024x256)
+    }
+
+  private:
+    std::filesystem::path _path;
+};
+
 auto do_correct(Arguments &args) -> void {
     print(
         "        ____ ___   ____  ____ ___  ____ / /_\n"
         "       / __// _ \\ / __/ / __// -_)/ __// __/\n"
         "       \\__/ \\___//_/   /_/   \\__/ \\__/ \\__/\n");
-    auto cal = get_applicable_calibration(0.001, 1731413311);
+
+    // Open the data files to work out what calibration we need
+
+    auto cal = get_applicable_calibration_paths(0.001, 1731413311);
 
     // mt::styled(1.23, fmt::fg(fmt::color::green)
     print("Using Mask:     {}\n", fmt::styled(cal.mask, style::path));
     print("Using Pedestal: {}\n", fmt::styled(cal.pedestal, style::path));
     print("Using Gains:    {}\n", fmt::styled(cal.gain, style::path));
+
+    // Read pedestal data into memory
+    auto pedestal_data = PedestalData{cal.pedestal, args.detector};
 
     // for (auto &src : args.sources) {
     //     print(" - {}\n", src);

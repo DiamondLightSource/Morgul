@@ -12,7 +12,7 @@ using namespace fmt;
 /// Parse the CLI arguments into an easily-passable arguments object
 auto do_argument_parsing(int argc, char **argv) -> Arguments {
     auto parser = CUDAArgumentParser();
-    parser.add_argument("--detector").default_value("JF1M");
+    parser.add_argument("--detector").default_value(JF1M);
     auto correct_parser = argparse::ArgumentParser("correct");
     correct_parser.add_argument("SOURCES")
         .help("Raw data files to run corrections on")
@@ -30,16 +30,6 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         print("Error: Unknown detector '{}'\n", args.detector);
         std::exit(1);
     }
-    print(
-        " ███▄ ▄███▓ ▒█████   ██▀███    ▄████  █    ██  ██▓    \n"
-        "▓██▒▀█▀ ██▒▒██▒  ██▒▓██ ▒ ██▒ ██▒ ▀█▒ ██  ▓██▒▓██▒    \n"
-        "▓██    ▓██░▒██░  ██▒▓██ ░▄█ ▒▒██░▄▄▄░▓██  ▒██░▒██░    \n"
-        "▒██    ▒██ ▒██   ██░▒██▀▀█▄  ░▓█  ██▓▓▓█  ░██░▒██░    \n"
-        "▒██▒   ░██▒░ ████▓▒░░██▓ ▒██▒░▒▓███▀▒▒▒█████▓ ░██████▒\n"
-        "░ ▒░   ░  ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░ ░▒   ▒ ░▒▓▒ ▒ ▒ ░ ▒░▓  ░\n"
-        "░  ░      ░  ░ ▒ ▒░   ░▒ ░ ▒░  ░   ░ ░░▒░ ░ ░ ░ ░ ▒  ░\n"
-        "░      ░   ░ ░ ░ ▒    ░░   ░ ░ ░   ░  ░░░ ░ ░   ░ ░   \n"
-        "       ░       ░ ░     ░           ░    ░         ░  ░\n");
     if (parser.is_subcommand_used(correct_parser)) {
         args.command = {"correct"};
         args.sources = correct_parser.get<std::vector<std::string>>("SOURCES");
@@ -53,7 +43,16 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
 
 int main(int argc, char **argv) {
     auto args = do_argument_parsing(argc, argv);
-
+    print(
+        " ███▄ ▄███▓ ▒█████   ██▀███    ▄████  █    ██  ██▓    \n"
+        "▓██▒▀█▀ ██▒▒██▒  ██▒▓██ ▒ ██▒ ██▒ ▀█▒ ██  ▓██▒▓██▒    \n"
+        "▓██    ▓██░▒██░  ██▒▓██ ░▄█ ▒▒██░▄▄▄░▓██  ▒██░▒██░    \n"
+        "▒██    ▒██ ▒██   ██░▒██▀▀█▄  ░▓█  ██▓▓▓█  ░██░▒██░    \n"
+        "▒██▒   ░██▒░ ████▓▒░░██▓ ▒██▒░▒▓███▀▒▒▒█████▓ ░██████▒\n"
+        "░ ▒░   ░  ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░ ░▒   ▒ ░▒▓▒ ▒ ▒ ░ ▒░▓  ░\n"
+        "░  ░      ░  ░ ▒ ▒░   ░▒ ░ ▒░  ░   ░ ░░▒░ ░ ░ ░ ░ ▒  ░\n"
+        "░      ░   ░ ░ ░ ▒    ░░   ░ ░ ░   ░  ░░░ ░ ░   ░ ░   \n"
+        "       ░       ░ ░     ░           ░    ░         ░  ░\n");
     if (args.command == "correct") {
         do_correct(args);
     }

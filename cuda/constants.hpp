@@ -2,12 +2,20 @@
 
 #include <filesystem>
 #include <map>
+#include <string>
+#include <tuple>
 
 const auto GAIN_MAPS = std::filesystem::path{"/dls_sw/apps/jungfrau/calibration"};
 
+using Detector = std::string;
+constexpr static Detector JF1M{"JF1M"};
+
+constexpr static std::tuple<uint16_t, uint16_t> MODULE_SHAPE{1024, 512};
+constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 512};
+
 /// Maps detector name to known module names and positions
-const std::map<std::string, std::map<std::string, std::tuple<int, int>>>
-    KNOWN_DETECTORS = {{"JF1M", {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
+const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
+    {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
 
 // [jf1md-00]
 // position = bottom
