@@ -170,11 +170,16 @@ def write_pedestal_output(
     with tqdm.tqdm(total=num_images_total, leave=False) as progress:
         for halfmodule_index, modes in pedestal_data.items():
             for gain_mode, data in sorted(modes.items(), key=lambda x: x[0]):
+                if data.module_mode == ModuleMode.FULL:
+                    progress_title = f" {data.module_serial_number} Gain {gain_mode}"
+                else:
+                    progress_title = f" HMI{data.halfmodule_index} ({data.module_serial_number}/{data.halfmodule_index % 2}) Gain {gain_mode}"
+
                 pedestal_mean, pedestal_variance, pedestal_mask = average_pedestal(
                     gain_mode,
                     data.data,
                     parent_progress=progress,
-                    progress_title=f" {data.module_serial_number} Gain {gain_mode}",
+                    progress_title=progress_title,
                 )
                 if data.module_mode == ModuleMode.FULL:
                     group_name = data.module_serial_number
