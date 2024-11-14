@@ -12,6 +12,7 @@ import tqdm
 import typer
 
 from .config import (
+    NUM_GAIN_MODES,
     Detector,
     ModuleMode,
     get_detector,
@@ -54,11 +55,12 @@ class PedestalCorrections:
             else:
                 self.module_mode = ModuleMode.FULL
 
+            modules = get_known_modules_for_detector(detector)
+
+            # Work out what the group names are expected to be
             module_group_names: dict[str, str | int]
             if self.module_mode == ModuleMode.FULL:
-                module_group_names = {
-                    x: x for x in get_known_modules_for_detector(detector)
-                }
+                module_group_names = {x: x for x in modules}
                 assert module_group_names
             else:
                 (det_cols, det_rows) = get_known_module_layout_for_detector(detector)
@@ -66,18 +68,17 @@ class PedestalCorrections:
                     f"hmi_{x:02d}": x for x in range(0, det_cols * det_rows * 2 + 1)
                 }
 
-            # For now, just read all data into memory
             exposure_time = f["exptime"][()]
-            for group_name, mod in module_group_names.items():
+            for group_name, mod_index in module_group_names.items():
                 if group_name not in f:
                     logger.warning(
                         f"Could not find module group named '{group_name}'. Pedestal data may be invalid."
                     )
                     continue
                 # Read any gain-mode pedestals out of this file
-                for gainmode in range(3):
+                for gainmode in range(NUM_GAIN_MODES):
                     if f"pedestal_{gainmode}" in f[group_name]:
-                        self._tables[exposure_time, mod, gainmode] = numpy.copy(
+                        self._tables[exposure_time, mod_index, gainmode] = numpy.copy(
                             f[group_name][f"pedestal_{gainmode}"]
                         )
 
@@ -89,17 +90,20 @@ class PedestalCorrections:
         return any(abs(x - exposure) < 1e-9 for x, _, _ in self._tables)
 
     def get_pedestal(
-        self, exposure_time: float, module: str, gain_mode: int
+        self, exposure_time: float, module: str | int, gain_mode: int
     ) -> numpy.typing.NDArray:
         try:
             return self._tables[exposure_time, module, gain_mode]
         except KeyError:
+            index_type = (
+                "module" if self.module_mode == ModuleMode.FULL else "halfmodule_index"
+            )
             raise KeyError(
-                f"No pedestal data for (exposure: {exposure_time}, module: {module}, mode: {gain_mode})"
+                f"No pedestal data for (exposure: {exposure_time}, {index_type}: {module}, mode: {gain_mode})"
             )
 
     def has_pedestal(
-        self, exposure_time: float, module: str, gain_mode: int | None = None
+        self, exposure_time: float, module: str | int, gain_mode: int | None = None
     ) -> bool:
         """Do we contain the pedestal correction tables for a specific module?"""
         if gain_mode is not None:
@@ -133,7 +137,11 @@ class PedestalCorrections:
         pass
 
     def __getitem__(
-        self, key: float | tuple[float] | tuple[float, str] | tuple[float, str, int]
+        self,
+        key: float
+        | tuple[float]
+        | tuple[float, str | int]
+        | tuple[float, str | int, int],
     ):
         output: Any = {}
         try:
@@ -157,7 +165,7 @@ class PedestalCorrections:
                 ]
         elif len(key) == 2:
             # Get all entries for one exposure time
-            key = cast(tuple[float, str], key)
+            key = cast(tuple[float, str | int], key)
             for gainmode in [
                 g for e, m, g in self._tables if e == exact_exptime and m == key[1]
             ]:

@@ -10,7 +10,7 @@ import sys
 from enum import Enum, auto
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy
 import numpy.typing
@@ -46,6 +46,8 @@ class Detector(str, enum.Enum):
 
 
 _DETECTOR: Detector | None = None
+
+NUM_GAIN_MODES = 3
 
 
 class ModuleMode(Enum):
@@ -96,9 +98,26 @@ def get_known_modules_for_detector(detector: Detector) -> list[str]:
 
 
 def get_known_module_layout_for_detector(detector: Detector) -> tuple[int, int]:
+    """Returns [column_count, row_count] for a known detector"""
     if detector == Detector.JF1MD:
         return (1, 2)
     raise ValueError(f"Unsupported detector: {detector}")
+
+
+class ModulePosition(NamedTuple):
+    column: int
+    row: int
+
+
+def get_module_position(module_id: str) -> ModulePosition:
+    module = get_module_from_id(module_id)
+    return ModulePosition(column=module["column"], row=module["row"])
+
+
+def get_module_index(detector: Detector, module_id: str) -> int:
+    cols, rows = get_known_module_layout_for_detector(detector)
+    pos = get_module_position(module_id)
+    return pos.column * rows + pos.row
 
 
 def get_module_info(detector: Detector, col: int, row: int) -> dict[str, Any]:
