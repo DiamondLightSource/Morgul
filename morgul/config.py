@@ -75,6 +75,12 @@ def get_known_modules_for_detector(detector: Detector) -> list[str]:
     ]
 
 
+def get_known_module_layout_for_detector(detector: Detector) -> tuple[int, int]:
+    if detector == Detector.JF1MD:
+        return (1, 2)
+    raise ValueError(f"Unsupported detector: {detector}")
+
+
 def get_module_info(detector: Detector, col: int, row: int) -> dict[str, Any]:
     """Get metainformation about a module from the detector and position"""
     return get_config()[f"{detector.value}-{col}{row}"]

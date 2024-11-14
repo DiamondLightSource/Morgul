@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import datetime
 import glob
@@ -5,6 +7,7 @@ import os
 import re
 import shutil
 import time
+from enum import Enum, auto
 from logging import getLogger
 from pathlib import Path
 from typing import Annotated, List, NamedTuple, Optional
@@ -16,10 +19,28 @@ import numpy.typing
 import tqdm
 import typer
 
-from .config import Detector, get_detector, get_module_info
+from .config import (
+    Detector,
+    get_detector,
+    get_known_module_layout_for_detector,
+    get_module_info,
+)
 from .util import NC, B, G, elapsed_time_string
 
 logger = getLogger(__name__)
+
+
+class ModuleMode(Enum):
+    FULL = auto()
+    HALF = auto()
+
+    @classmethod
+    def from_shape(cls, shape: tuple[int, ...]) -> ModuleMode:
+        if shape[-2:] == (256, 1024):
+            return cls.HALF
+        elif shape[-2:] == (512, 1024):
+            return cls.FULL
+        raise ValueError(f"Unrecognised module shape {shape[-2]},{shape[-1]}")
 
 
 def average_pedestal(
@@ -73,32 +94,47 @@ class PedestalData(NamedTuple):
     filename: Path
     row: int
     col: int
+    data: numpy.typing.NDArray
     exptime: float
     gainmode: str
-    timestamp: datetime.datetime
-    module_serial_number: str
+    halfmodule_index: int
+    module_mode: ModuleMode
     module_position: str | None
+    module_serial_number: str
     num_images: int
-    data: numpy.typing.NDArray
+    timestamp: datetime.datetime
 
     @classmethod
     def from_h5(
         cls, filename: Path, h5: h5py.Dataset, detector: Detector
     ) -> "PedestalData":
+        # Work out the data shape
+        mode = ModuleMode.from_shape(h5["data"].shape)
+        w, h = get_known_module_layout_for_detector(detector)
+        if mode == ModuleMode.FULL:
+            column, row = h5["column"][()], h5["row"][()]
+            hmi = column * h * 2 + row * 2
+        else:
+            column, row = h5["column"][()], h5["row"][()] // 2
+            # Calculate the halfmodule-index; see https://github.com/graeme-winter/jungfrau/blob/d7aa198915bdddcef4dfed7ee5b94507bb5fea81/doc/FORMAT.md#module-arrangement
+            hmi = column * h * 2 + h5["row"][()]
+
         # Work out what the module serial number and "position" is
-        module = get_module_info(detector, col=h5["column"][()], row=h5["row"][()])
+        module = get_module_info(detector, col=column, row=row)
 
         return PedestalData(
             filename,
             row=h5["row"][()],
             col=h5["column"][()],
+            data=h5["data"],
             exptime=h5["exptime"][()],
             gainmode=h5["gainmode"][()].decode(),
-            timestamp=datetime.datetime.fromtimestamp(h5["timestamp"][()]),
-            module_serial_number=module["module"],
+            halfmodule_index=hmi,
+            module_mode=mode,
             module_position=module.get("position"),
+            module_serial_number=module["module"],
             num_images=h5["data"].shape[0],
-            data=h5["data"],
+            timestamp=datetime.datetime.fromtimestamp(h5["timestamp"][()]),
         )
 
 
@@ -113,19 +149,26 @@ GAIN_MODE_REAL = {0: 0, 1: 1, 2: 3}
 
 
 def write_pedestal_output(
-    root: h5py.Group, pedestal_data: dict[tuple[int, int], dict[int, PedestalData]]
+    root: h5py.Group, pedestal_data: dict[int, dict[int, PedestalData]]
 ) -> None:
     """Calculate pedestals from source files and write into the output file"""
 
-    # Calculate how many images total
+    module_mode: ModuleMode | None = None
+    # Calculate how many images total, for progress purposes
     num_images_total = 0
     for modes in pedestal_data.values():
         for data in modes.values():
             num_images_total += data.num_images
+            # Validate we don't have mixed module modes
+            module_mode = module_mode or data.module_mode
+            if data.module_mode != module_mode:
+                raise RuntimeError("Error: Got mixed module half/full mode data")
+
+    root.create_dataset("module_mode", data=module_mode.name.lower())
 
     # Analyse the pedestal data and write the output
     with tqdm.tqdm(total=num_images_total, leave=False) as progress:
-        for (col, row), modes in pedestal_data.items():
+        for halfmodule_index, modes in pedestal_data.items():
             for gain_mode, data in sorted(modes.items(), key=lambda x: x[0]):
                 pedestal_mean, pedestal_variance, pedestal_mask = average_pedestal(
                     gain_mode,
@@ -133,14 +176,20 @@ def write_pedestal_output(
                     parent_progress=progress,
                     progress_title=f" {data.module_serial_number} Gain {gain_mode}",
                 )
-                if data.module_serial_number not in root:
-                    group = root.create_group(data.module_serial_number)
+                if data.module_mode == ModuleMode.FULL:
+                    group_name = data.module_serial_number
+                else:
+                    group_name = f"hmi_{data.halfmodule_index:02d}"
+                if group_name not in root:
+                    group = root.create_group(group_name)
                     if data.module_position is not None:
                         group.attrs["position"] = data.module_position.strip("\"'")
-                    group.attrs["row"] = row
-                    group.attrs["col"] = col
+                    group.attrs["row"] = data.row
+                    group.attrs["col"] = data.col
+                    group.attrs["module"] = data.module_serial_number
+                    group.attrs["halfmodule_index"] = data.halfmodule_index
 
-                group = root[data.module_serial_number]
+                group = root[group_name]
                 dataset = group.create_dataset(
                     f"pedestal_{gain_mode}", data=pedestal_mean
                 )
@@ -185,7 +234,7 @@ def pedestal(
     print(f"Using detector: {G}{detector.value}{NC}")
 
     # Cache all the data
-    pedestal_data: dict[tuple[int, int], dict[int, PedestalData]] = {}
+    pedestal_data: dict[int, dict[int, PedestalData]] = {}
 
     exposure_time: float | None = None
 
@@ -226,23 +275,25 @@ def pedestal(
                         f"Error: pedestal file {filename} exposure time ({data.exptime}) does not match others ({exposure_time})"
                     )
                     raise typer.Abort()
-            module = pedestal_data.setdefault((data.col, data.row), dict())
+
+            halfmodule = pedestal_data.setdefault(data.halfmodule_index, dict())
+
             # Validate we didn't get passed two from the same mode
-            if gain_mode in module:
+            if gain_mode in halfmodule:
                 logger.error(
-                    f"Error: Duplicate gain mode {gain_mode} (both {module[gain_mode].filename} and {filename})"
+                    f"Error: Duplicate gain mode {gain_mode} (both {halfmodule[gain_mode].filename} and {filename})"
                 )
                 raise typer.Abort()
-            module[gain_mode] = data
+            halfmodule[gain_mode] = data
             logger.info(
-                f"Got file {B}{filename}{NC} with gain mode {G}{gain_mode}{NC} for module ({G}{data.row}{NC}, {G}{data.col}{NC}) ({G}{data.module_serial_number}{NC})"
+                f"Got file {B}{filename}{NC} with gain mode {G}{gain_mode}{NC} for module (HMI= {G}{data.halfmodule_index}{NC} [{G}{data.row}{NC}, {G}{data.col}{NC}]) ({G}{data.module_serial_number}{NC})"
             )
 
         # Validate that every module had a complete set of gain modes
         for module_addr, gains in pedestal_data.items():
             if not len(gains) == len(GAIN_MODES):
                 logger.error(
-                    f"Error: Incomplete data set. Module {module_addr} only has {len(gains)} gain modes, expected {len(GAIN_MODES)}"
+                    f"Error: Incomplete data set. Module HMI:{module_addr} only has {len(gains)} gain modes, expected {len(GAIN_MODES)}"
                 )
                 raise typer.Abort()
 
