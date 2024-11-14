@@ -13,7 +13,9 @@ import typer
 
 from .config import (
     Detector,
+    ModuleMode,
     get_detector,
+    get_known_module_layout_for_detector,
     get_known_modules_for_detector,
     get_module_info,
     psi_gain_maps,
@@ -38,24 +40,45 @@ class PedestalCorrections:
 
     detector: Detector
     filename: Path
-    _tables: dict[tuple[float, str, int], numpy.typing.NDArray]
+    module_mode: ModuleMode
+    _tables: dict[tuple[float, str | int, int], numpy.typing.NDArray]
 
     def __init__(self, detector: Detector, filename: Path):
         self.detector = detector
         self.filename = filename
 
-        valid_modules = get_known_modules_for_detector(detector)
-        assert valid_modules
         self._tables = {}
         with h5py.File(filename, "r") as f:
+            if "module_mode" in f:
+                self.module_mode = ModuleMode(f["module_mode"][()])
+            else:
+                self.module_mode = ModuleMode.FULL
+
+            module_group_names: dict[str, str | int]
+            if self.module_mode == ModuleMode.FULL:
+                module_group_names = {
+                    x: x for x in get_known_modules_for_detector(detector)
+                }
+                assert module_group_names
+            else:
+                (det_cols, det_rows) = get_known_module_layout_for_detector(detector)
+                module_group_names = {
+                    f"hmi_{x:02d}": x for x in range(0, det_cols * det_rows * 2 + 1)
+                }
+
             # For now, just read all data into memory
             exposure_time = f["exptime"][()]
-            for mod in [x for x in valid_modules if x in f]:
+            for group_name, mod in module_group_names.items():
+                if group_name not in f:
+                    logger.warning(
+                        f"Could not find module group named '{group_name}'. Pedestal data may be invalid."
+                    )
+                    continue
                 # Read any gain-mode pedestals out of this file
                 for gainmode in range(3):
-                    if f"pedestal_{gainmode}" in f[mod]:
+                    if f"pedestal_{gainmode}" in f[group_name]:
                         self._tables[exposure_time, mod, gainmode] = numpy.copy(
-                            f[mod][f"pedestal_{gainmode}"]
+                            f[group_name][f"pedestal_{gainmode}"]
                         )
 
     @property

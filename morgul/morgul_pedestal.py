@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import time
-from enum import Enum, auto
 from logging import getLogger
 from pathlib import Path
 from typing import Annotated, List, NamedTuple, Optional
@@ -21,6 +20,7 @@ import typer
 
 from .config import (
     Detector,
+    ModuleMode,
     get_detector,
     get_known_module_layout_for_detector,
     get_module_info,
@@ -28,19 +28,6 @@ from .config import (
 from .util import NC, B, G, elapsed_time_string
 
 logger = getLogger(__name__)
-
-
-class ModuleMode(Enum):
-    FULL = auto()
-    HALF = auto()
-
-    @classmethod
-    def from_shape(cls, shape: tuple[int, ...]) -> ModuleMode:
-        if shape[-2:] == (256, 1024):
-            return cls.HALF
-        elif shape[-2:] == (512, 1024):
-            return cls.FULL
-        raise ValueError(f"Unrecognised module shape {shape[-2]},{shape[-1]}")
 
 
 def average_pedestal(

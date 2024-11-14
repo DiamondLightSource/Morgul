@@ -7,6 +7,7 @@ import logging
 import os
 import socket
 import sys
+from enum import Enum, auto
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,25 @@ class Detector(str, enum.Enum):
 
 
 _DETECTOR: Detector | None = None
+
+
+class ModuleMode(Enum):
+    FULL = auto()
+    HALF = auto()
+
+    @classmethod
+    def from_shape(cls, shape: tuple[int, ...]) -> ModuleMode:
+        if shape[-2:] == (256, 1024):
+            return cls.HALF
+        elif shape[-2:] == (512, 1024):
+            return cls.FULL
+        raise ValueError(f"Unrecognised module shape {shape[-2]},{shape[-1]}")
+
+    @classmethod
+    def _missing_(cls, name):
+        for member in cls:
+            if member.name.lower() == name.lower():
+                return member
 
 
 def get_detector() -> Detector:
