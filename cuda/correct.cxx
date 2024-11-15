@@ -5,7 +5,6 @@
 #include <fmt/ranges.h>
 #include <fmt/std.h>
 #include <hdf5.h>
-#include <pybind11/pybind11.h>
 
 #include <chrono>
 #include <cstdlib>
