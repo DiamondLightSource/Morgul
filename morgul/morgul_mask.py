@@ -16,7 +16,9 @@ import tqdm
 import typer
 
 from .config import (
+    ModuleMode,
     get_detector,
+    get_known_module_layout_for_detector,
     get_module_info,
     psi_gain_maps,
 )
@@ -134,6 +136,7 @@ def mask(
             h5 = stack.enter_context(h5py.File(filename, "r"))
             exptime = h5["exptime"][()]
             timestamps.add(h5["timestamp"][()])
+
             # Validate that this exposure time is identical and present in the pedestal data
             if exposure_time is None:
                 exposure_time = exptime
@@ -148,9 +151,16 @@ def mask(
                 )
                 raise typer.Abort()
             # Validate that this module is present in the pedestal data
-            module: str = get_module_info(
-                detector, int(h5["column"][()]), int(h5["row"][()])
-            )["module"]
+            module_mode = ModuleMode.from_shape(h5["data"].shape)
+            module: str | int
+            if module_mode == ModuleMode.FULL:
+                module = get_module_info(
+                    detector, int(h5["column"][()]), int(h5["row"][()])
+                )["module"]
+            else:
+                _, rows = get_known_module_layout_for_detector(detector)
+                module = h5["column"][()] * rows * 2 + h5["row"][()]
+
             if not pedestals.has_pedestal(exposure_time, module):
                 logger.error(
                     f"Error: No data in pedestal file for module {module} for exposure {exposure_time*1000:g} ms"
