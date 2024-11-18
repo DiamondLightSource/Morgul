@@ -125,40 +125,53 @@ auto H5Iget_name(hid_t identifier) -> std::optional<std::string> {
 
 template <typename T>
 auto read_single_hdf5_value(hid_t root_group, std::string path)
-    -> expected<T, std::string> {
-    hid_t dataset;
-    if ((dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT)) == H5I_INVALID_HID) {
-        throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
-    }
-    hid_t datatype = H5Dget_type(dataset);
-    size_t datatype_size = H5Tget_size(datatype);
-    hid_t dataspace = H5Dget_space(dataset);
-    size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
+    -> expected<T, std::string>;
+//     {
+//     hid_t dataset;
+//     if ((dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT)) == H5I_INVALID_HID) {
+//         throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
+//     }
+//     hid_t datatype = H5Dget_type(dataset);
+//     size_t datatype_size = H5Tget_size(datatype);
+//     hid_t dataspace = H5Dget_space(dataset);
+//     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
 
-    if (num_elements > 1) {
-        return unexpected(fmt::format("More than one element reading {}/{}",
-                                      H5Iget_name(dataset).value()));
-    } else {
+//     if (num_elements > 1) {
+//         return unexpected(fmt::format("More than one element reading {}/{}",
+//                                       H5Iget_name(dataset).value()));
+//     } else {
+//     }
+//     H5Dclose(dataset);
+// }
+
+/// Convenience class to ensure an HDF5 closing routine is called properly
+template <herr_t(D)(hid_t)>
+struct H5Cleanup {
+    H5Cleanup(hid_t id) : id(id) {}
+    ~H5Cleanup() {
+        D(id);
     }
-    H5Dclose(dataset);
-}
+    operator hid_t() const {
+        return id;
+    }
+    hid_t id;
+};
 
 template <>
 auto read_single_hdf5_value(hid_t root_group, const std::string path)
     -> expected<std::string, std::string> {
-    hid_t dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT);
+    auto dataset = H5Cleanup<H5Dclose>(H5Dopen(root_group, path.c_str(), H5P_DEFAULT));
     if (dataset == H5I_INVALID_HID) {
         return unexpected(fmt::format("Invalid HDF5 group: {}", path));
     }
-    hid_t datatype = H5Dget_type(dataset);
+    auto datatype = H5Cleanup<H5Tclose>(H5Dget_type(dataset));
     if (H5Tget_class(datatype) != H5T_STRING) {
         return unexpected("Dataset type class is not string!");
     }
 
-    hid_t dataspace = H5Dget_space(dataset);
+    auto dataspace = H5Cleanup<H5Sclose>(H5Dget_space(dataset));
     H5S_class_t dataspace_type = H5Sget_simple_extent_type(dataspace);
     if (dataspace_type != H5S_SCALAR) {
-        H5Dclose(dataset);
         return unexpected(
             fmt::format("Do not know how to read non-scalar dataset {}/{}",
                         H5Iget_name(dataset).value(),
@@ -174,13 +187,11 @@ auto read_single_hdf5_value(hid_t root_group, const std::string path)
         return unexpected("Failed to read");
     }
     std::string output{buffer};
+    // We need to explicitly reclaim the automatically allocated space
     if (H5Treclaim(datatype, dataspace, H5P_DEFAULT, &buffer) < 0) {
         return unexpected("Failed to reclaim");
     }
-    buffer = nullptr;
 
-    H5Sclose(dataspace);
-    H5Dclose(dataset);
     return output;
 }
 
@@ -211,6 +222,9 @@ class PedestalData {
 
         print("Module mode: {}\n", _module_mode == ModuleMode::FULL ? "Full" : "Half");
 
+        while (true) {
+            read_single_hdf5_value<std::string>(file, "/module_mode").value();
+        }
         // We want to support two forms of pedestal file;
         // Original Morgul:
         // - <ModuleName>/pedestal_{0,1,2} (1024x512)

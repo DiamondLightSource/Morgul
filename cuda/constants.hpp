@@ -17,6 +17,9 @@ constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 256};
 const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
     {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
 
+/// Size of detector, in (columns, rows)
+const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}}};
+
 // template <
 // [jf1md-00]
 // position = bottom
