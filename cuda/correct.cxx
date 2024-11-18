@@ -14,6 +14,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <zeus/expected.hpp>
 
 #include "commands.hpp"
@@ -187,6 +188,15 @@ enum class ModuleMode {
     FULL,
     HALF,
 };
+auto module_mode_from(std::string_view value) -> ModuleMode {
+    if (value == "full") {
+        return ModuleMode::FULL;
+    } else if (value == "half") {
+        return ModuleMode::HALF;
+    }
+    throw std::runtime_error(
+        fmt::format("Got invalid or not understood module mode '{}'", value));
+}
 
 class PedestalData {
   public:
@@ -196,22 +206,19 @@ class PedestalData {
         if (file == H5I_INVALID_HID) {
             throw std::runtime_error("Failed to open Pedestal file");
         }
-        auto module_mode =
-            read_single_hdf5_value<std::string>(file, "/module_mode").value();
-        if (module_mode == "full") {
-            _module_mode = ModuleMode::FULL;
-        } else {
-            _module_mode = ModuleMode::HALF;
-        }
-        print("Module mode: {}\n", module_mode);
+        _module_mode = module_mode_from(
+            read_single_hdf5_value<std::string>(file, "/module_mode").value());
 
-        // return "Some";
+        print("Module mode: {}\n", _module_mode == ModuleMode::FULL ? "Full" : "Half");
 
         // We want to support two forms of pedestal file;
         // Original Morgul:
         // - <ModuleName>/pedestal_{0,1,2} (1024x512)
         // HMI Morgul
         // - HMI_ID/pedestal_{0,1,2} (1024x256)
+        if (_module_mode == ModuleMode::FULL) {
+        }
+        // return "Some";
     }
 
   private:

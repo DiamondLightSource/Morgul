@@ -11,12 +11,13 @@ using Detector = std::string;
 constexpr static Detector JF1M{"JF1M"};
 
 constexpr static std::tuple<uint16_t, uint16_t> MODULE_SHAPE{1024, 512};
-constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 512};
+constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 256};
 
 /// Maps detector name to known module names and positions
 const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
     {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
 
+// template <
 // [jf1md-00]
 // position = bottom
 // module = M420
