@@ -44,6 +44,13 @@ FetchContent_Declare(
     GIT_TAG        v3.0.3
 )
 FetchContent_MakeAvailable(date_src)
+FetchContent_Declare(
+    zeus_expected
+    GIT_REPOSITORY https://github.com/zeus-cpp/expected.git
+    GIT_TAG v1.2.0
+)
+set(BUILD_TESTING OFF)
+FetchContent_MakeAvailable(zeus_expected)
 
 find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
@@ -62,9 +69,13 @@ target_link_libraries(
     PRIVATE
     argparse
     CUDA::cudart
+    date::date
     fmt
     hdf5::hdf5
-    nlohmann_json::nlohmann_json
     lodepng
-    date::date
+    nlohmann_json::nlohmann_json
+    zeus::expected
 )
+
+add_executable(test cuda/test.cxx)
+target_link_libraries(test PRIVATE hdf5::hdf5 fmt)

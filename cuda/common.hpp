@@ -13,6 +13,8 @@
 
 // Setting up some common printing styles
 struct style {
+    static constexpr auto error =
+        fmt::emphasis::bold | fmt::fg(fmt::terminal_color::red);
     static constexpr auto warning =
         fmt::emphasis::bold | fmt::fg(fmt::terminal_color::yellow);
     static constexpr auto path = fmt::fg(fmt::terminal_color::magenta);

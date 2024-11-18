@@ -14,6 +14,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <zeus/expected.hpp>
 
 #include "commands.hpp"
 #include "common.hpp"
@@ -22,11 +23,13 @@
 // namespace py = pybind11;
 //
 using namespace fmt;
+using zeus::expected;
+
 // using namespace H5;
 
 struct CalibrationDataPath {
     std::filesystem::path pedestal;
-    std::filesystem::path mask;
+    std::optional<std::filesystem::path> mask;
     std::filesystem::path gain;
 };
 
@@ -92,9 +95,9 @@ auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
         throw std::runtime_error(
             "Error: Could not find a matching pedestal calibration");
     }
-    if (!most_recent_mask) {
-        throw std::runtime_error("Error: Could not find a matching mask calibration");
-    }
+    // if (!most_recent_mask) {
+    //     throw std::runtime_error("Error: Could not find a matching mask calibration");
+    // }
     if (ts_latest - std::get<0>(most_recent_pedestal.value())
         > std::chrono::hours(24)) {
         print(style::warning,
@@ -103,21 +106,100 @@ auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
     }
     return {
         .pedestal = std::get<1>(most_recent_pedestal.value()),
-        .mask = std::get<1>(most_recent_mask.value()),
+        // .mask = std::get<1>(most_recent_mask.value()),
         .gain = GAIN_MAPS,
     };
 }
+
+auto H5Iget_name(hid_t identifier) -> std::optional<std::string> {
+    ssize_t name_size = H5Iget_name(identifier, NULL, 0);
+    if (name_size == 0) {
+        return std::nullopt;
+    }
+    std::string name;
+    name.reserve(name_size + 1);
+    H5Iget_name(identifier, name.data(), name_size + 1);
+    return name;
+}
+
+template <typename T>
+auto read_single_hdf5_value(hid_t root_group, std::string path) -> T {
+    hid_t dataset;
+    if ((dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT)) == H5I_INVALID_HID) {
+        throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
+    }
+    hid_t datatype = H5Dget_type(dataset);
+    size_t datatype_size = H5Tget_size(datatype);
+    hid_t dataspace = H5Dget_space(dataset);
+    size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
+
+    if (num_elements > 1) {
+        print(style::error,
+              "More than one element reading {}/{}",
+              H5Iget_name(dataset).value());
+        throw std::runtime_error("More than one element");
+    } else {
+    }
+    H5Dclose(dataset);
+}
+
+template <>
+auto read_single_hdf5_value(hid_t root_group, const std::string path) -> std::string {
+    hid_t dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT);
+    if (dataset == H5I_INVALID_HID) {
+        throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
+    }
+    hid_t datatype = H5Dget_type(dataset);
+    if (H5Tget_class(datatype) != H5T_STRING) {
+        throw std::runtime_error("Dataset type class is not string!");
+    }
+
+    hid_t dataspace = H5Dget_space(dataset);
+    H5S_class_t dataspace_type = H5Sget_simple_extent_type(dataspace);
+    if (dataspace_type != H5S_SCALAR) {
+        H5Dclose(dataset);
+        throw std::runtime_error(
+            fmt::format("Do not know how to read non-scalar dataset {}/{}",
+                        H5Iget_name(dataset).value(),
+                        path));
+    }
+    bool is_var = H5Tis_variable_str(datatype);
+    if (!is_var) {
+        throw std::runtime_error("Unhandled fixed-length string");
+    }
+    char *buffer = nullptr;
+
+    if (H5Dread(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &buffer) < 0) {
+        throw std::runtime_error("Failed to read");
+    }
+    std::string output{buffer};
+    if (H5Treclaim(datatype, dataspace, H5P_DEFAULT, &buffer) < 0) {
+        throw std::runtime_error("Failed to reclaim");
+    }
+    buffer = nullptr;
+
+    H5Sclose(dataspace);
+    H5Dclose(dataset);
+    return output;
+}
+
+enum class ModuleMode {
+    FULL,
+    HALF,
+};
 
 class PedestalData {
   public:
     PedestalData(std::filesystem::path path, Detector detector) : _path(path) {
         // auto file = H5File(path, H5F_ACC_RDONLY);
-        hid_t file = H5I_INVALID_HID;
-
-        if (file =
-                H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT) == H5I_INVALID_HID) {
+        hid_t file = H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+        if (file == H5I_INVALID_HID) {
             throw std::runtime_error("Failed to open Pedestal file");
         }
+        auto module_mode = read_single_hdf5_value<std::string>(file, "/module_mode");
+        print("Module mode: {}\n", module_mode);
+        // return "Some";
+
         // We want to support two forms of pedestal file;
         // Original Morgul:
         // - <ModuleName>/pedestal_{0,1,2} (1024x512)
@@ -127,6 +209,7 @@ class PedestalData {
 
   private:
     std::filesystem::path _path;
+    ModuleMode _module_mode;
 };
 
 auto do_correct(Arguments &args) -> void {
@@ -139,8 +222,12 @@ auto do_correct(Arguments &args) -> void {
 
     auto cal = get_applicable_calibration_paths(0.001, 1731413311);
 
-    // mt::styled(1.23, fmt::fg(fmt::color::green)
-    print("Using Mask:     {}\n", fmt::styled(cal.mask, style::path));
+    if (cal.mask) {
+        print("Using Mask:     {}\n", fmt::styled(cal.mask, style::path));
+    } else {
+        print("Using Mask:     {}\n",
+              styled("No Mask Data, temporarily accepting", style::error));
+    }
     print("Using Pedestal: {}\n", fmt::styled(cal.pedestal, style::path));
     print("Using Gains:    {}\n", fmt::styled(cal.gain, style::path));
 
