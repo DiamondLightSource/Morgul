@@ -23,7 +23,7 @@
 // namespace py = pybind11;
 //
 using namespace fmt;
-using zeus::expected;
+using zeus::expected, zeus::unexpected;
 
 // using namespace H5;
 
@@ -123,7 +123,8 @@ auto H5Iget_name(hid_t identifier) -> std::optional<std::string> {
 }
 
 template <typename T>
-auto read_single_hdf5_value(hid_t root_group, std::string path) -> T {
+auto read_single_hdf5_value(hid_t root_group, std::string path)
+    -> expected<T, std::string> {
     hid_t dataset;
     if ((dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT)) == H5I_INVALID_HID) {
         throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
@@ -134,47 +135,46 @@ auto read_single_hdf5_value(hid_t root_group, std::string path) -> T {
     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
 
     if (num_elements > 1) {
-        print(style::error,
-              "More than one element reading {}/{}",
-              H5Iget_name(dataset).value());
-        throw std::runtime_error("More than one element");
+        return unexpected(fmt::format("More than one element reading {}/{}",
+                                      H5Iget_name(dataset).value()));
     } else {
     }
     H5Dclose(dataset);
 }
 
 template <>
-auto read_single_hdf5_value(hid_t root_group, const std::string path) -> std::string {
+auto read_single_hdf5_value(hid_t root_group, const std::string path)
+    -> expected<std::string, std::string> {
     hid_t dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT);
     if (dataset == H5I_INVALID_HID) {
-        throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
+        return unexpected(fmt::format("Invalid HDF5 group: {}", path));
     }
     hid_t datatype = H5Dget_type(dataset);
     if (H5Tget_class(datatype) != H5T_STRING) {
-        throw std::runtime_error("Dataset type class is not string!");
+        return unexpected("Dataset type class is not string!");
     }
 
     hid_t dataspace = H5Dget_space(dataset);
     H5S_class_t dataspace_type = H5Sget_simple_extent_type(dataspace);
     if (dataspace_type != H5S_SCALAR) {
         H5Dclose(dataset);
-        throw std::runtime_error(
+        return unexpected(
             fmt::format("Do not know how to read non-scalar dataset {}/{}",
                         H5Iget_name(dataset).value(),
                         path));
     }
     bool is_var = H5Tis_variable_str(datatype);
     if (!is_var) {
-        throw std::runtime_error("Unhandled fixed-length string");
+        return unexpected("Unhandled fixed-length string");
     }
     char *buffer = nullptr;
 
     if (H5Dread(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &buffer) < 0) {
-        throw std::runtime_error("Failed to read");
+        return unexpected("Failed to read");
     }
     std::string output{buffer};
     if (H5Treclaim(datatype, dataspace, H5P_DEFAULT, &buffer) < 0) {
-        throw std::runtime_error("Failed to reclaim");
+        return unexpected("Failed to reclaim");
     }
     buffer = nullptr;
 
@@ -196,8 +196,15 @@ class PedestalData {
         if (file == H5I_INVALID_HID) {
             throw std::runtime_error("Failed to open Pedestal file");
         }
-        auto module_mode = read_single_hdf5_value<std::string>(file, "/module_mode");
+        auto module_mode =
+            read_single_hdf5_value<std::string>(file, "/module_mode").value();
+        if (module_mode == "full") {
+            _module_mode = ModuleMode::FULL;
+        } else {
+            _module_mode = ModuleMode::HALF;
+        }
         print("Module mode: {}\n", module_mode);
+
         // return "Some";
 
         // We want to support two forms of pedestal file;
