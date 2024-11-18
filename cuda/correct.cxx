@@ -149,7 +149,9 @@ template <herr_t(D)(hid_t)>
 struct H5Cleanup {
     H5Cleanup(hid_t id) : id(id) {}
     ~H5Cleanup() {
-        D(id);
+        if (id >= 0) {
+            D(id);
+        }
     }
     operator hid_t() const {
         return id;
@@ -195,6 +197,43 @@ auto read_single_hdf5_value(hid_t root_group, const std::string path)
     return output;
 }
 
+template <typename T>
+class Array2D {
+  public:
+    Array2D(std::unique_ptr<T> data,
+            size_t width,
+            size_t height,
+            size_t stride,
+            bool ragged = false)
+        : _width(width), _height(height), _stride(stride), _data(data) {}
+
+    auto data() -> std::span<T> {
+        return std::span<T>(_data.get(), _stride * _height);
+    }
+
+  private:
+    size_t _width, _height, _stride;
+    std::unique_ptr<T> _data;
+};
+
+template <typename T>
+auto read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
+    -> expected<Array2D<T>, std::string> {
+    auto dataset =
+        H5Cleanup<H5Dclose>(H5Dopen(root_group, path_to_dataset.data(), H5P_DEFAULT));
+    if (dataset == H5I_INVALID_HID) {
+        return unexpected(fmt::format("Invalid HDF5 group: {}", path_to_dataset));
+    }
+    auto datatype = H5Cleanup<H5Tclose>(H5Dget_type(dataset));
+    if (datatype < 0) {
+        return unexpected("Could not get data type");
+    }
+    auto dataspace = H5Cleanup<H5Sclose>(H5Dget_space(dataset));
+    if (dataspace < 0) {
+        return unexpected("Could not get data space");
+    }
+}
+
 enum class ModuleMode {
     FULL,
     HALF,
@@ -213,7 +252,8 @@ class PedestalData {
   public:
     PedestalData(std::filesystem::path path, Detector detector) : _path(path) {
         // auto file = H5File(path, H5F_ACC_RDONLY);
-        hid_t file = H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+        auto file =
+            H5Cleanup<H5Fclose>(H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
         if (file == H5I_INVALID_HID) {
             throw std::runtime_error("Failed to open Pedestal file");
         }
@@ -222,15 +262,29 @@ class PedestalData {
 
         print("Module mode: {}\n", _module_mode == ModuleMode::FULL ? "Full" : "Half");
 
-        while (true) {
-            read_single_hdf5_value<std::string>(file, "/module_mode").value();
-        }
         // We want to support two forms of pedestal file;
-        // Original Morgul:
-        // - <ModuleName>/pedestal_{0,1,2} (1024x512)
         // HMI Morgul
         // - HMI_ID/pedestal_{0,1,2} (1024x256)
+        auto [n_cols, n_rows] = DETECTOR_SIZE.at(detector);
         if (_module_mode == ModuleMode::FULL) {
+            // Original Morgul:
+            // - <ModuleName>/pedestal_{0,1,2} (1024x512)
+            //         const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
+            // {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
+            auto det_modules = KNOWN_DETECTORS.at(detector);
+            for (const auto &[module_name, position] : det_modules) {
+                auto [mod_col, mod_row] = position;
+                uint8_t index = n_rows * mod_col + mod_row;
+                print("Module {}(i={})\n", module_name, index);
+
+                // Read the data for this module out of the file
+                for (auto mode : GAIN_MODES) {
+                    auto name = fmt::format("{}/pedestal_{}", module_name, mode);
+                    auto table = read_2d_dataset<double>(file, name);
+                }
+            }
+        } else {
+            throw std::runtime_error("Halfmodules not handled");
         }
         // return "Some";
     }
