@@ -16,6 +16,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <string_view>
 #include <zeus/expected.hpp>
@@ -338,7 +339,7 @@ auto draw_image_data(const Array2D<T> &data,
 }
 
 class PedestalData {
-    typedef double pedestal_type;
+    typedef double pedestal_t;
 
   public:
     PedestalData(std::filesystem::path path, Detector detector) : _path(path) {
@@ -366,7 +367,7 @@ class PedestalData {
                 // Read the data for this module out of the file
                 for (auto mode : GAIN_MODES) {
                     auto name = fmt::format("{}/pedestal_{}", module_name, mode);
-                    auto table = read_2d_dataset<double>(file, name).value();
+                    auto table = read_2d_dataset<pedestal_t>(file, name).value();
 
                     // Let's split this dataset
                     auto [top, bottom] = split_module(table);
@@ -375,14 +376,28 @@ class PedestalData {
                 }
             }
         } else {
-            throw std::runtime_error("Halfmodules not handled");
+            // Halfmodule morgul:
+            // - /pedestal_{0,1,2} (1024x512)
+            //         const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
+            for (size_t hmi : std::ranges::views::iota(0, n_cols * n_rows * 2)) {
+                for (auto gain_mode : GAIN_MODES) {
+                    auto dataset_name =
+                        fmt::format("hmi_{:02d}/pedestal_{}", hmi, gain_mode);
+
+                    _modules[hmi][gain_mode] =
+                        read_2d_dataset<pedestal_t>(file, dataset_name).value();
+                }
+            }
         }
+    }
+    auto get_pedestal(size_t halfmodule_index, uint8_t gain_mode) -> Array2D & {
+        return _modules[halfmodule_index][gain_mode];
     }
 
   private:
     std::filesystem::path _path;
     ModuleMode _module_mode;
-    std::map<size_t, std::map<uint8_t, Array2D<pedestal_type>>> _modules;
+    std::map<size_t, std::map<uint8_t, Array2D<pedestal_t>>> _modules;
 };
 
 auto do_correct(Arguments &args) -> void {
