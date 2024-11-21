@@ -21,7 +21,7 @@ const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETE
 const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}}};
 
 /// Names for gain modes
-const std::vector<uint8_t> GAIN_MODES = {0, 1, 2};
+constexpr std::array<uint8_t, 3> GAIN_MODES{0, 1, 2};
 
 // template <
 // [jf1md-00]

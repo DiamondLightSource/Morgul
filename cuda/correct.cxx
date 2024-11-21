@@ -5,6 +5,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <fmt/std.h>
+#include <glob.h>
 #include <hdf5.h>
 
 #include <algorithm>
@@ -19,6 +20,7 @@
 #include <ranges>
 #include <sstream>
 #include <string_view>
+#include <type_traits>
 #include <zeus/expected.hpp>
 
 #include "commands.hpp"
@@ -127,27 +129,6 @@ auto H5Iget_name(hid_t identifier) -> std::optional<std::string> {
     return name;
 }
 
-template <typename T>
-auto read_single_hdf5_value(hid_t root_group, std::string path)
-    -> expected<T, std::string>;
-//     {
-//     hid_t dataset;
-//     if ((dataset = H5Dopen(root_group, path.c_str(), H5P_DEFAULT)) == H5I_INVALID_HID) {
-//         throw std::runtime_error(fmt::format("Invalid HDF5 group: {}", path));
-//     }
-//     hid_t datatype = H5Dget_type(dataset);
-//     size_t datatype_size = H5Tget_size(datatype);
-//     hid_t dataspace = H5Dget_space(dataset);
-//     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
-
-//     if (num_elements > 1) {
-//         return unexpected(fmt::format("More than one element reading {}/{}",
-//                                       H5Iget_name(dataset).value()));
-//     } else {
-//     }
-//     H5Dclose(dataset);
-// }
-
 /// Convenience class to ensure an HDF5 closing routine is called properly
 template <herr_t(D)(hid_t)>
 struct H5Cleanup {
@@ -162,6 +143,83 @@ struct H5Cleanup {
     }
     hid_t id;
 };
+
+template <typename T>
+auto read_single_hdf5_value(hid_t root_group, std::string path)
+    -> expected<T, std::string> {
+    auto dataset = H5Cleanup<H5Dclose>(H5Dopen(root_group, path.data(), H5P_DEFAULT));
+    if (dataset == H5I_INVALID_HID) {
+        return unexpected(fmt::format("Invalid HDF5 group: {}", path));
+    }
+    auto dataspace = H5Cleanup<H5Sclose>(H5Dget_space(dataset));
+    if (dataspace < 0) {
+        return unexpected("Could not get data space");
+    }
+    auto datatype = H5Cleanup<H5Tclose>(H5Dget_type(dataset));
+    if (datatype < 0) {
+        return unexpected("Could not get data type");
+    }
+    H5S_class_t dataspace_type = H5Sget_simple_extent_type(dataspace);
+    if (dataspace_type != H5S_SCALAR) {
+        return unexpected(
+            fmt::format("Do not know how to read non-scalar dataset {}/{}",
+                        H5Iget_name(dataset).value(),
+                        path));
+    }
+
+    // Check for basic data type mismatches
+    auto dt_class = H5Tget_class(datatype);
+    if (dt_class == H5T_INTEGER && !std::is_integral_v<T>) {
+        return unexpected("Trying to read integer type into non-integer");
+    } else if (dt_class == H5T_FLOAT && !std::is_floating_point_v<T>) {
+        return unexpected("Trying to read floating point value into integer");
+    }
+    if (dt_class != H5T_INTEGER && dt_class != H5T_FLOAT) {
+        return unexpected(
+            "Unexpected data class type; can only handle integer/non-integer");
+    }
+
+    size_t datatype_size = H5Tget_size(datatype);
+    auto native_type =
+        H5Cleanup<H5Tclose>(H5Tget_native_type(datatype, H5T_DIR_DEFAULT));
+    size_t native_size = H5Tget_size(native_type);
+
+    hid_t read_datatype = datatype;
+    if (dt_class == H5T_INTEGER) {
+        // Validate data type conversions for now. This is a bit annoying
+        // but probably safer than just blindly assuming the conversion works.
+        if ((native_type == H5T_NATIVE_CHAR || native_type == H5T_NATIVE_SHORT
+             || native_type == H5T_NATIVE_INT || native_type == H5T_NATIVE_LONG
+             || native_type == H5T_NATIVE_LLONG)
+            && !std::is_signed_v<T>) {
+            return unexpected("Will not copy signed to unsigned");
+        }
+        if ((native_type == H5T_NATIVE_UCHAR || native_type == H5T_NATIVE_USHORT
+             || native_type == H5T_NATIVE_UINT || native_type == H5T_NATIVE_ULONG
+             || native_type == H5T_NATIVE_ULLONG)
+            && std::is_signed_v<T>) {
+            return unexpected("Will not copy unsigned data into signed");
+        }
+        if (datatype_size != sizeof(T)) {
+            return unexpected(
+                fmt::format("Data type size mismatch: Trying to copy size {} into {}",
+                            datatype_size,
+                            sizeof(T)));
+        }
+    }
+
+    // If native type double, we want to read that, even if we've been asked
+    // for a float by the template instantiator. The caller probably doesn't
+    // care if the data is declared as float or double internally.
+    typename std::conditional<std::is_same_v<T, float>, double, T>::type output;
+
+    if (H5Dread(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &output) < 0) {
+        throw std::runtime_error("Failed to read dataset");
+        return unexpected("Failed to read dataset");
+    }
+
+    return output;
+}
 
 template <>
 auto read_single_hdf5_value(hid_t root_group, const std::string path)
@@ -350,10 +408,10 @@ class PedestalData {
         }
         _module_mode = module_mode_from(
             read_single_hdf5_value<std::string>(file, "/module_mode").value());
-
-        print("Module mode: {}\n", _module_mode == ModuleMode::FULL ? "Full" : "Half");
-
+        _exposure_time = read_single_hdf5_value<float>(file, "/exptime").value();
+        print("Got exposure time: {}\n", _exposure_time);
         auto [n_cols, n_rows] = DETECTOR_SIZE.at(detector);
+
         // We want to support two forms of pedestal file;
         if (_module_mode == ModuleMode::FULL) {
             // Original Morgul:
@@ -390,14 +448,110 @@ class PedestalData {
             }
         }
     }
-    auto get_pedestal(size_t halfmodule_index, uint8_t gain_mode) -> Array2D & {
-        return _modules[halfmodule_index][gain_mode];
+    auto get_pedestal(size_t halfmodule_index, uint8_t gain_mode) const
+        -> const Array2D<pedestal_t> & {
+        return _modules.at(halfmodule_index).at(gain_mode);
+    }
+    auto exposure_time() const {
+        return _exposure_time;
     }
 
   private:
     std::filesystem::path _path;
     ModuleMode _module_mode;
     std::map<size_t, std::map<uint8_t, Array2D<pedestal_t>>> _modules;
+    float _exposure_time;
+};
+
+class GainData {
+    typedef double gain_t;
+
+  public:
+    GainData(std::filesystem::path path, Detector detector) : _path(path) {
+        // Get the module names
+        auto modules = KNOWN_DETECTORS.at(detector);
+        // auto det_modules = KNOWN_DETECTORS.at(detector);
+        constexpr size_t num_module_pixels =
+            std::get<0>(MODULE_SHAPE) * std::get<1>(MODULE_SHAPE);
+        constexpr size_t num_pixels = num_module_pixels * GAIN_MODES.size();
+        auto raw_data = std::vector<gain_t>(num_pixels);
+
+        auto [n_cols, n_rows] = DETECTOR_SIZE.at(detector);
+
+        for (const auto &[module_name, module_position] : modules) {
+            auto expected_map =
+                path / fmt::format("{}_fullspeed", module_name) / "*.bin";
+            // The actual gain map name may vary; pick up the only .bin file via glob
+            glob_t glob_results;
+            int glob_ret = glob(expected_map.c_str(), 0, nullptr, &glob_results);
+            if (glob_ret != 0) {
+                globfree(&glob_results);
+                throw std::runtime_error("glob for gain .bin failed");
+            }
+            if (glob_results.gl_pathc > 1) {
+                globfree(&glob_results);
+                throw std::runtime_error(
+                    fmt::format("Got more than one result for {}", expected_map));
+            }
+            // We have one result, and we want to use it
+            std::filesystem::path module_gain_map(glob_results.gl_pathv[0]);
+            // Check the file size
+
+            size_t expected_size = num_pixels * sizeof(gain_t);
+            // if (expected_size != std::filesystem::file_size(module_gain_map)) {
+            //     throw std::runtime_error(fmt::format(
+            //         "Gain map {} on disk are an unexpected size (expected {})",
+            //         module_gain_map,
+            //         expected_size));
+            // }
+            globfree(&glob_results);
+            print("Loading gain map for {} from {}\n", module_name, module_gain_map);
+            auto gainfile = std::ifstream(module_gain_map, std::ios_base::binary);
+            if (!gainfile) {
+                throw std::runtime_error("Could not open gain map for reading");
+            }
+            gainfile.read(reinterpret_cast<char *>(raw_data.data()), expected_size);
+
+            auto [mod_col, mod_row] = module_position;
+            size_t halfmodule_index = 2 * n_rows * mod_col + 2 * mod_row;
+
+            // Split each of these into six halfmodules
+            for (uint8_t gain_mode :
+                 std::ranges::views::iota(0, int(GAIN_MODES.size()))) {
+                print("Reading gain {}\n", gain_mode);
+                // auto lookup = &raw_data[num_pixels * gain_mode];
+                auto gain_top = std::make_unique<gain_t[]>(num_module_pixels / 2);
+                auto gain_bot = std::make_unique<gain_t[]>(num_module_pixels / 2);
+                std::fill(gain_top.get(), gain_top.get() + num_module_pixels / 2, 666);
+                std::fill(gain_bot.get(), gain_bot.get() + num_module_pixels / 2, 666);
+                std::copy(raw_data.begin() + num_module_pixels * gain_mode,
+                          raw_data.begin() + num_module_pixels * gain_mode
+                              + num_module_pixels / 2,
+                          gain_top.get());
+                std::copy(raw_data.begin() + num_module_pixels * gain_mode
+                              + num_module_pixels / 2,
+                          raw_data.begin() + num_module_pixels * (gain_mode + 1),
+                          gain_bot.get());
+                _modules[halfmodule_index][GAIN_MODES[gain_mode]] =
+                    Array2D(std::move(gain_top),
+                            std::get<0>(MODULE_SHAPE),
+                            std::get<1>(MODULE_SHAPE) / 2);
+                _modules[halfmodule_index + 1][GAIN_MODES[gain_mode]] =
+                    Array2D(std::move(gain_bot),
+                            std::get<0>(MODULE_SHAPE),
+                            std::get<1>(MODULE_SHAPE) / 2);
+                draw_image_data(raw_data.data(), 0, 256, 10, 5, 1024, 512);
+                draw_image_data(
+                    _modules[halfmodule_index][GAIN_MODES[gain_mode]], 0, 0, 10, 5);
+                draw_image_data(
+                    _modules[halfmodule_index + 1][GAIN_MODES[gain_mode]], 0, 0, 10, 5);
+            }
+        }
+    }
+
+  private:
+    std::filesystem::path _path;
+    std::map<size_t, std::map<uint8_t, Array2D<gain_t>>> _modules;
 };
 
 auto do_correct(Arguments &args) -> void {
@@ -421,6 +575,8 @@ auto do_correct(Arguments &args) -> void {
 
     // Read pedestal data into memory
     auto pedestal_data = PedestalData{cal.pedestal, args.detector};
+    auto gain_data = GainData(cal.gain, args.detector);
+    // Read gain tables into memory
 
     // for (auto &src : args.sources) {
     //     print(" - {}\n", src);
