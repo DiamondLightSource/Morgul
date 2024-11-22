@@ -62,6 +62,7 @@ add_executable(
     morgul-cuda
     cuda/main.cxx
     cuda/correct.cxx
+    cuda/calibration.cxx
 )
 target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_link_libraries(
@@ -76,6 +77,3 @@ target_link_libraries(
     nlohmann_json::nlohmann_json
     zeus::expected
 )
-
-add_executable(test cuda/test.cxx)
-target_link_libraries(test PRIVATE hdf5::hdf5 fmt)

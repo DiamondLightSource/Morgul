@@ -1,8 +1,8 @@
-#ifndef COMMON_H
-#define COMMON_H
+#pragma once
 
 #include <fmt/color.h>
 #include <fmt/core.h>
+#include <fmt/std.h>
 
 #include <algorithm>
 #include <cinttypes>
@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 // Setting up some common printing styles
 struct style {
@@ -248,4 +249,3 @@ auto count_nonzero(const std::span<const T> data, I width, I height, I2 pitch = 
     -> size_t {
     return count_nonzero(data.data(), width, height, pitch);
 }
-#endif
