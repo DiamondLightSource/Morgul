@@ -20,11 +20,14 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
 
     parser.add_subparser(correct_parser);
     auto cuargs = parser.parse_args(argc, argv);
-    Arguments args = {
-        .verbose = cuargs.verbose,
-        .cuda_device_index = cuargs.device_index,
-        .detector = parser.get<std::string>("--detector"),
-    };
+    Arguments args = {.verbose = cuargs.verbose,
+                      .cuda_device_index = cuargs.device_index,
+                      .detector = parser.get<std::string>("--detector"),
+                      .cuda_device_signature = fmt::format(
+                          "{} (CUDA {}.{})",
+                          fmt::styled(cuargs.device.name, fmt::emphasis::bold),
+                          cuargs.device.major,
+                          cuargs.device.minor)};
 
     if (!KNOWN_DETECTORS.contains(args.detector)) {
         print("Error: Unknown detector '{}'\n", args.detector);

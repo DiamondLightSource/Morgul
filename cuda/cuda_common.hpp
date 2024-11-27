@@ -167,10 +167,10 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
                        cuda_error_string(cudaGetLastError()));
             std::exit(1);
         }
-        fmt::print("Using {} (CUDA {}.{})\n\n",
-                   fmt::styled(_arguments.device.name, fmt::emphasis::bold),
-                   _arguments.device.major,
-                   _arguments.device.minor);
+        // fmt::print("Using {} (CUDA {}.{})\n\n",
+        //            fmt::styled(_arguments.device.name, fmt::emphasis::bold),
+        //            _arguments.device.major,
+        //            _arguments.device.minor);
 
         // If we activated h5read, then handle hdf5 verbosity
         // if (_activated_h5read && !_arguments.verbose) {

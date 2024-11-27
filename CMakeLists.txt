@@ -12,7 +12,6 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
-
 # include_directories(include)
 
 # Dependency fetching
@@ -77,3 +76,4 @@ target_link_libraries(
     nlohmann_json::nlohmann_json
     zeus::expected
 )
+# set_target_properties(morgul-cuda PROPERTIES CXX_CLANG_TIDY "clang-tidy;-checks=-*,readability-*;--use-color")

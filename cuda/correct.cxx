@@ -27,7 +27,9 @@ auto do_correct(Arguments &args) -> void {
     print(
         "        ____ ___   ____  ____ ___  ____ / /_\n"
         "       / __// _ \\ / __/ / __// -_)/ __// __/\n"
-        "       \\__/ \\___//_/   /_/   \\__/ \\__/ \\__/\n");
+        "       \\__/ \\___//_/   /_/   \\__/ \\__/ \\__/\n\n");
+
+    print("Using {}\n", args.cuda_device_signature);
 
     // Open the data files to work out what calibration we need
 
