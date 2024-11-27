@@ -37,7 +37,7 @@ auto do_correct(Arguments &args) -> void {
         print("Using Mask:     {}\n", fmt::styled(cal.mask, style::path));
     } else {
         print("Using Mask:     {}\n",
-              styled("No Mask Data, temporarily accepting", style::error));
+              styled("No Mask Data, proceeding without", style::warning));
     }
     print("Using Pedestal: {}\n", fmt::styled(cal.pedestal, style::path));
     print("Using Gains:    {}\n", fmt::styled(cal.gain, style::path));
