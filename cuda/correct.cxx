@@ -20,8 +20,18 @@
 #include "commands.hpp"
 #include "common.hpp"
 #include "constants.hpp"
+#include "hdf5_tools.hpp"
 
-using namespace fmt;
+using fmt::print;
+using std::filesystem::path;
+
+class DataFile {
+  public:
+    DataFile(const path &path) {}
+
+  private:
+    H5Cleanup<H5Fclose> file;
+};
 
 auto do_correct(Arguments &args) -> void {
     print(
