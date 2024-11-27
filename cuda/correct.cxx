@@ -27,7 +27,9 @@ using std::filesystem::path;
 
 class DataFile {
   public:
-    DataFile(const path &path) {}
+    DataFile(const path &path) {
+        file = H5Cleanup<H5Fclose>(H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+    }
 
   private:
     H5Cleanup<H5Fclose> file;
@@ -43,6 +45,9 @@ auto do_correct(Arguments &args) -> void {
 
     // Open the data files to work out what calibration we need
 
+    for (auto &datafile_path : args.sources) {
+        auto file = DataFile(datafile_path);
+    }
     auto cal = get_applicable_calibration_paths(0.001, 1731413311);
 
     if (cal.mask) {
