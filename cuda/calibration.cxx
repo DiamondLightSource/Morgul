@@ -306,7 +306,7 @@ PedestalData::PedestalData(std::filesystem::path path, Detector detector)
     _module_mode = module_mode_from(
         read_single_hdf5_value<std::string>(file, "/module_mode").value());
     _exposure_time = read_single_hdf5_value<float>(file, "/exptime").value();
-    print("Got exposure time: {}\n", _exposure_time);
+    print("Got exposure time: {}\n", styled(_exposure_time, style::number));
     auto [n_cols, n_rows] = DETECTOR_SIZE.at(detector);
 
     // We want to support two forms of pedestal file;
@@ -383,7 +383,9 @@ GainData::GainData(std::filesystem::path path, Detector detector) : _path(path) 
                 expected_size));
         }
         globfree(&glob_results);
-        print("Loading gain map for {} from {}\n", module_name, module_gain_map);
+        print("Loading gain map for {} from: {}\n",
+              module_name,
+              styled(module_gain_map, style::path));
         auto gainfile = std::ifstream(module_gain_map, std::ios_base::binary);
         if (!gainfile) {
             throw std::runtime_error("Could not open gain map for reading");

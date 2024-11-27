@@ -101,7 +101,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
                     cudaGetDeviceProperties(&deviceProp, device);
                     fmt::print("  {:2d}: {} (PCI {}:{}:{}, CUDA {}.{})\n",
                                device,
-                               bold("{}", deviceProp.name),
+                               fmt::styled(deviceProp.name, fmt::emphasis::bold),
                                deviceProp.pciDomainID,
                                deviceProp.pciBusID,
                                deviceProp.pciDeviceID,
@@ -122,7 +122,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         std::filesystem::path argfile{"common.args"};
         if (std::filesystem::exists(argfile)) {
             fmt::print("File {} exists, loading default args:\n",
-                       bold(argfile.string()));
+                       fmt::styled(argfile.string(), fmt::emphasis::bold));
             std::fstream f{argfile};
             std::string arg;
             while (std::getline(f, arg)) {
@@ -142,10 +142,12 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         try {
             ArgumentParser::parse_args(args);
         } catch (std::runtime_error &e) {
-            fmt::print("{}: {}\n{}\n",
-                       bold(red("Error")),
-                       red(e.what()),
-                       ArgumentParser::usage());
+            fmt::print(
+                "{}: {}\n{}\n",
+                fmt::styled("Error",
+                            fmt::emphasis::bold | fmt::fg(fmt::terminal_color::red)),
+                fmt::styled(e.what(), fmt::fg(fmt::terminal_color::red)),
+                ArgumentParser::usage());
             std::exit(1);
         }
 
@@ -159,13 +161,14 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         }
         if (cudaGetDeviceProperties(&_arguments.device, _arguments.device_index)
             != cudaSuccess) {
-            fmt::print(fmt::runtime(red("{}: Could not inspect GPU ({})\n",
-                                        bold("Error"),
-                                        cuda_error_string(cudaGetLastError()))));
+            fmt::print(fmt::fg(fmt::terminal_color::red),
+                       "{}: Could not inspect GPU ({})\n",
+                       fmt::styled("Error", fmt::emphasis::bold),
+                       cuda_error_string(cudaGetLastError()));
             std::exit(1);
         }
         fmt::print("Using {} (CUDA {}.{})\n\n",
-                   bold(_arguments.device.name),
+                   fmt::styled(_arguments.device.name, fmt::emphasis::bold),
                    _arguments.device.major,
                    _arguments.device.minor);
 

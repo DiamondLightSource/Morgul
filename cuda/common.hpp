@@ -13,45 +13,13 @@
 #include <vector>
 
 // Setting up some common printing styles
-struct style {
-    static constexpr auto error =
-        fmt::emphasis::bold | fmt::fg(fmt::terminal_color::red);
-    static constexpr auto warning =
-        fmt::emphasis::bold | fmt::fg(fmt::terminal_color::yellow);
-    static constexpr auto path = fmt::fg(fmt::terminal_color::magenta);
-};
-
-template <typename T1, typename... TS>
-auto with_formatting(const std::string &code, const T1 &first, TS... args)
-    -> std::string {
-    return code + fmt::format(fmt::runtime(fmt::format("{}", first)), args...)
-           + "\033[0m";
-}
-
-template <typename... T>
-auto bold(T... args) -> std::string {
-    return with_formatting("\033[1m", args...);
-}
-template <typename... T>
-auto blue(T... args) -> std::string {
-    return with_formatting("\033[34m", args...);
-}
-template <typename... T>
-auto red(T... args) -> std::string {
-    return with_formatting("\033[31m", args...);
-}
-template <typename... T>
-auto green(T... args) -> std::string {
-    return with_formatting("\033[32m", args...);
-}
-template <typename... T>
-auto gray(T... args) -> std::string {
-    return with_formatting("\033[37m", args...);
-}
-template <typename... T>
-auto yellow(T... args) -> std::string {
-    return with_formatting("\033[33m", args...);
-}
+namespace style {
+static constexpr auto error = fmt::emphasis::bold | fmt::fg(fmt::terminal_color::red);
+static constexpr auto warning =
+    fmt::emphasis::bold | fmt::fg(fmt::terminal_color::yellow);
+static constexpr auto path = fmt::fg(fmt::terminal_color::magenta);
+static constexpr auto number = fmt::emphasis::bold | fmt::fg(fmt::terminal_color::cyan);
+}  // namespace style
 
 /// Draw a subset of the pixel values for a 2D image array
 /// fast, slow, width, height - describe the bounding box to draw
