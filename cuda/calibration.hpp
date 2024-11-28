@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -13,8 +14,9 @@ struct CalibrationDataPath {
     std::optional<std::filesystem::path> mask;
     std::filesystem::path gain;
 };
-auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
-    -> CalibrationDataPath;
+auto get_applicable_calibration_paths(
+    float exposure_time,
+    std::chrono::sys_time<std::chrono::seconds> timestamp) -> CalibrationDataPath;
 
 enum class ModuleMode {
     FULL,

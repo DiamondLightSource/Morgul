@@ -3,6 +3,8 @@
 #include <date/date.h>
 #include <fmt/std.h>
 #include <glob.h>
+
+#include <chrono>
 // #include <hdf5.h>
 
 #include <algorithm>
@@ -18,15 +20,16 @@
 using namespace fmt;
 
 /// Read the calibration log to find the correct calibration data sets
-auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
-    -> CalibrationDataPath {
+auto get_applicable_calibration_paths(
+    float exposure_time,
+    std::chrono::sys_time<std::chrono::seconds> timestamp) -> CalibrationDataPath {
     const auto calibration_log = std::getenv("JUNGFRAU_CALIBRATION_LOG");
     if (calibration_log == nullptr) {
         throw std::runtime_error(
             "Can not find calibration data; Please set JUNGFRAU_CALIBRATION_LOG.");
     }
 
-    const auto ts_latest = std::chrono::sys_time(std::chrono::seconds(timestamp));
+    // const auto ts_latest = std::chrono::sys_time(std::chrono::seconds(timestamp));
     // print("Calibration time point: {}\n",
     //       fmt::styled(ts_latest, fg(fmt::terminal_color::cyan)));
     std::string record_kind, record_timestamp;
@@ -51,7 +54,7 @@ auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
                             line,
                             record_timestamp));
         }
-        if (ts < ts_latest) {
+        if (ts < timestamp) {
             if (record_kind == "PEDESTAL") {
                 if (std::fabs(record_exposure - exposure_time) > 1e-6) {
                     continue;
@@ -82,7 +85,7 @@ auto get_applicable_calibration_paths(float exposure_time, uint64_t timestamp)
     // if (!most_recent_mask) {
     //     throw std::runtime_error("Error: Could not find a matching mask calibration");
     // }
-    if (ts_latest - std::get<0>(most_recent_pedestal.value())
+    if (timestamp - std::get<0>(most_recent_pedestal.value())
         > std::chrono::hours(24)) {
         print(style::warning,
               "Warning: Calibration time point is over 24 hours older than data. "
