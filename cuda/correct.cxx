@@ -12,9 +12,11 @@
 // #include <iostream>
 // #include <memory>
 // #include <optional>
-// #include <sstream>
+#include <sstream>
 // #include <string_view>
 // #include <type_traits>
+
+#include <fmt/chrono.h>
 
 #include <chrono>
 
@@ -25,19 +27,32 @@
 #include "hdf5_tools.hpp"
 
 using fmt::print;
-using std::chrono::sys_time, std::chrono::milliseconds;
 using std::filesystem::path;
+
+typedef std::chrono::time_point<std::chrono::utc_clock, std::chrono::duration<double>>
+    utc_float_t;
+
+template <>
+struct fmt::formatter<utc_float_t> : formatter<string_view> {
+    auto format(utc_float_t c, format_context &ctx) const -> format_context::iterator;
+};
+auto fmt::formatter<utc_float_t>::format(utc_float_t c, format_context &ctx) const
+    -> format_context::iterator {
+    std::stringstream ss;
+    ss << std::format("{:%Y-%m-%d %H:%M:%S}", c);
+    return formatter<string_view>::format(ss.str(), ctx);
+}
 
 class DataFile {
   public:
-    typedef std::chrono::time_point<std::chrono::system_clock,
+    typedef std::chrono::time_point<std::chrono::utc_clock,
                                     std::chrono::duration<double>>
         timestamp_t;
 
     DataFile(const path &path) {
         file = H5Cleanup<H5Fclose>(H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
         _exposure_time = read_single_hdf5_value<double>(file, "exptime").value();
-        _timestamp = timestamp_t(std::chrono::duration<double>(
+        _timestamp = timestamp_t(timestamp_t::duration(
             read_single_hdf5_value<double>(file, "timestamp").value()));
     }
 
@@ -101,6 +116,13 @@ auto do_correct(Arguments &args) -> void {
 
     print("Common timestamp:     {}\n",
           styled(common_timestamp.value(), style::number));
+    //std::chrono::clock_cast<std::chrono::system_clock>(
+    //  std::chrono::time_point_cast<std::chrono::seconds>(
+
+    // auto b = common_timestamp.value().to_sys();
+    // print("Common timestamp:     {}\n",
+    //       styled(common_timestamp.value(), style::number));
+    // std::cout << std::format("{:%Y-%m-%d %H:%M:%S}", ts) << std::endl;
     auto cal = get_applicable_calibration_paths(
         common_exposure_time.value(),
         std::chrono::time_point_cast<std::chrono::seconds>(common_timestamp.value()));

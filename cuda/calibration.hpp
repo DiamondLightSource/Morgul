@@ -16,7 +16,7 @@ struct CalibrationDataPath {
 };
 auto get_applicable_calibration_paths(
     float exposure_time,
-    std::chrono::sys_time<std::chrono::seconds> timestamp) -> CalibrationDataPath;
+    std::chrono::utc_time<std::chrono::seconds> timestamp) -> CalibrationDataPath;
 
 enum class ModuleMode {
     FULL,

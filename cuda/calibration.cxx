@@ -1,10 +1,14 @@
 #include "calibration.hpp"
 
 #include <date/date.h>
+#include <date/tz.h>
+#include <fmt/chrono.h>
 #include <fmt/std.h>
 #include <glob.h>
 
 #include <chrono>
+#include <iostream>
+#include <sstream>
 // #include <hdf5.h>
 
 #include <algorithm>
@@ -22,7 +26,7 @@ using namespace fmt;
 /// Read the calibration log to find the correct calibration data sets
 auto get_applicable_calibration_paths(
     float exposure_time,
-    std::chrono::sys_time<std::chrono::seconds> timestamp) -> CalibrationDataPath {
+    std::chrono::utc_time<std::chrono::seconds> timestamp) -> CalibrationDataPath {
     const auto calibration_log = std::getenv("JUNGFRAU_CALIBRATION_LOG");
     if (calibration_log == nullptr) {
         throw std::runtime_error(
@@ -38,7 +42,10 @@ auto get_applicable_calibration_paths(
     auto file = std::ifstream(calibration_log);
 
     // std::chrono::sys_time<std::chrono::milliseconds> ts;
-    std::chrono::time_point<std::chrono::system_clock, std::chrono::microseconds> ts;
+    // std::chrono::time_point<std::chrono::utc_clock, std::chrono::microseconds> ts;
+    std::chrono::sys_time<std::chrono::microseconds> ts_parse;
+    std::chrono::utc_time<std::chrono::microseconds> ts;
+
     using CalibTS = std::tuple<decltype(ts), std::filesystem::path>;
     std::optional<CalibTS> most_recent_pedestal = std::nullopt;
     std::optional<CalibTS> most_recent_mask = std::nullopt;
@@ -46,7 +53,8 @@ auto get_applicable_calibration_paths(
     int line = 1;
     while (file >> record_kind >> record_timestamp >> record_exposure >> record_path) {
         std::stringstream parse_ss{record_timestamp};
-        parse_ss >> date::parse("%FT%T%z", ts);
+        parse_ss >> date::parse("%FT%T%z", ts_parse);
+
         if (parse_ss.fail()) {
             throw std::runtime_error(
                 fmt::format("Error Reading {}:{}: Failed to parse timestamp '{}'",
@@ -54,6 +62,10 @@ auto get_applicable_calibration_paths(
                             line,
                             record_timestamp));
         }
+        // convert this to the UTC clock time, for comparison
+        // ts = std::chrono::clock_cast<std::chrono::utc_clock>(ts_parse);
+        ts = std::chrono::utc_clock::from_sys(ts_parse);
+
         if (ts < timestamp) {
             if (record_kind == "PEDESTAL") {
                 if (std::fabs(record_exposure - exposure_time) > 1e-6) {
