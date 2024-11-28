@@ -1,21 +1,4 @@
 
-// #include <fmt/color.h>
-// #include <fmt/core.h>
-// #include <fmt/format.h>
-// #include <fmt/ranges.h>
-
-// #include <algorithm>
-// #include <cstdlib>
-// #include <filesystem>
-// #include <fstream>
-// #include <iomanip>
-// #include <iostream>
-// #include <memory>
-// #include <optional>
-#include <sstream>
-// #include <string_view>
-// #include <type_traits>
-
 #include <fmt/chrono.h>
 
 #include <chrono>
@@ -28,20 +11,6 @@
 
 using fmt::print;
 using std::filesystem::path;
-
-typedef std::chrono::time_point<std::chrono::utc_clock, std::chrono::duration<double>>
-    utc_float_t;
-
-template <>
-struct fmt::formatter<utc_float_t> : formatter<string_view> {
-    auto format(utc_float_t c, format_context &ctx) const -> format_context::iterator;
-};
-auto fmt::formatter<utc_float_t>::format(utc_float_t c, format_context &ctx) const
-    -> format_context::iterator {
-    std::stringstream ss;
-    ss << std::format("{:%Y-%m-%d %H:%M:%S}", c);
-    return formatter<string_view>::format(ss.str(), ctx);
-}
 
 class DataFile {
   public:

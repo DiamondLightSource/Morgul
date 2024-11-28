@@ -1,12 +1,15 @@
 #pragma once
 
+#include <fmt/base.h>
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/std.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cinttypes>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -20,6 +23,19 @@ static constexpr auto warning =
 static constexpr auto path = fmt::fg(fmt::terminal_color::magenta);
 static constexpr auto number = fmt::emphasis::bold | fmt::fg(fmt::terminal_color::cyan);
 }  // namespace style
+
+/// Custom format support for utc_clock timepoints - the GCC 13 stdlib
+/// does not have a complete enough <chrono> for the built-in fmt:: support.
+template <typename T>
+struct fmt::formatter<std::chrono::time_point<std::chrono::utc_clock, T>>
+    : formatter<string_view> {
+    auto format(std::chrono::time_point<std::chrono::utc_clock, T> c,
+                format_context &ctx) const -> format_context::iterator {
+        std::stringstream ss;
+        ss << std::format("{:%Y-%m-%d %H:%M:%S}", c);
+        return formatter<string_view>::format(ss.str(), ctx);
+    }
+};
 
 /// Draw a subset of the pixel values for a 2D image array
 /// fast, slow, width, height - describe the bounding box to draw
