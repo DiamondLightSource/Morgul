@@ -56,6 +56,7 @@ find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(HDF5 REQUIRED)
 find_package(lodepng REQUIRED)
+find_package(cppzmq REQUIRED)
 
 add_executable(
     morgul-cuda
@@ -77,5 +78,6 @@ target_link_libraries(
     lodepng
     nlohmann_json::nlohmann_json
     zeus::expected
+    cppzmq
 )
 # set_target_properties(morgul-cuda PROPERTIES CXX_CLANG_TIDY "clang-tidy;-checks=-*,readability-*;--use-color")
