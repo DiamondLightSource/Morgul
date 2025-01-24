@@ -63,6 +63,7 @@ add_executable(
     cuda/correct.cxx
     cuda/calibration.cxx
     cuda/hdf5_tools.cxx
+    cuda/live.cxx
 )
 target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_link_libraries(

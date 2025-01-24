@@ -22,6 +22,8 @@ static constexpr auto warning =
     fmt::emphasis::bold | fmt::fg(fmt::terminal_color::yellow);
 static constexpr auto path = fmt::fg(fmt::terminal_color::magenta);
 static constexpr auto number = fmt::emphasis::bold | fmt::fg(fmt::terminal_color::cyan);
+static constexpr auto url = fmt::emphasis::bold | fmt::fg(fmt::terminal_color::blue);
+
 }  // namespace style
 
 /// Custom format support for utc_clock timepoints - the GCC 13 stdlib

@@ -13,6 +13,10 @@ struct Arguments {
     std::vector<std::string> sources;
     Detector detector;
     std::string cuda_device_signature;
+    std::string zmq_host;
+    uint16_t zmq_port;
+    uint16_t zmq_listeners;
 };
 
 auto do_correct(Arguments &args) -> void;
+auto do_live(Arguments &args) -> void;
