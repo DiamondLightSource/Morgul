@@ -22,6 +22,8 @@
 #include "hdf5_tools.hpp"
 
 using namespace fmt;
+// Causes conflict if imported before hdf5?
+#include "cuda_common.hpp"
 
 /// Read the calibration log to find the correct calibration data sets
 auto get_applicable_calibration_paths(
@@ -254,4 +256,14 @@ GainData::GainData(std::filesystem::path path, Detector detector) : _path(path) 
                         std::get<1>(MODULE_SHAPE) / 2);
         }
     }
+}
+
+auto GainData::upload() -> void {
+    auto width = std::get<0>(MODULE_SHAPE);
+    auto height = std::get<1>(MODULE_SHAPE);
+    size_t num_modules = _modules.size();
+
+    auto [ptr, pitch] = make_cuda_pitched_malloc<gain_t>(width, height * num_modules);
+    _gpu_data = ptr;
+    _gpu_pitch = pitch;
 }

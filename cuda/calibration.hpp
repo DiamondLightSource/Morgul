@@ -49,8 +49,11 @@ class GainData {
 
   public:
     GainData(std::filesystem::path path, Detector detector);
+    void upload();
 
   private:
+    std::shared_ptr<gain_t[]> _gpu_data;
+    size_t _gpu_pitch;
     std::filesystem::path _path;
     std::map<size_t, std::map<uint8_t, Array2D<gain_t>>> _modules;
 };

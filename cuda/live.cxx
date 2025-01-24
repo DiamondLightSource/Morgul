@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iterator>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <stop_token>
 #include <thread>
 #include <zmq.hpp>
@@ -20,9 +21,21 @@ using namespace fmt;
 using json = nlohmann::json;
 using namespace std::chrono_literals;
 
+const auto PREVIOUS_PEDESTAL = std::filesystem::path{"/dev/shm/current_pedestal.h5"};
+
 std::stop_source global_stop;
 
 std::atomic_int threads_waiting;
+
+/// Get an environment variable if present, with optional default
+auto getenv_or(std::string name, std::optional<std::string> _default = std::nullopt)
+    -> std::optional<std::string> {
+    auto data = std::getenv(name.c_str());
+    if (data == nullptr) {
+        return _default;
+    }
+    return {data};
+}
 
 void wait_spinner(const std::string_view &message) {
     static int index = 0;
@@ -149,13 +162,13 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
             ++num_images_seen;
             highest_image_seen =
                 std::max(highest_image_seen, static_cast<int>(header.frameIndex + 1));
-            print("{}: Received {},{}#{:5}: {}",
-                  port,
-                  header.column,
-                  header.row,
-                  header.frameIndex,
-                  recv_msgs[0].to_string_view());
-            print("       And size: {}\n", recv_msgs[1].size());
+            // print("{}: Received {},{}#{:5}: {}",
+            //       port,
+            //       header.column,
+            //       header.row,
+            //       header.frameIndex,
+            //       recv_msgs[0].to_string_view());
+            // print("       And size: {}\n", recv_msgs[1].size());
         } else {
             print(style::error,
                   "{}: Error: Got unexpected multipart message length {}\n",
@@ -172,13 +185,19 @@ auto do_live(Arguments &args) -> void {
         "                 / /__/ / |/ / -_)\n"
         "                /____/_/|___/\\__/\n\n");
 
+    auto gain_maps = getenv_or("GAIN_MAPS", GAIN_MAPS).value();
+    print("GPU:      {}\n", args.cuda_device_signature);
+    print("Detector: {}\n", styled(args.detector, emphasis::bold));
+    // print("Using Gains:    {}\n", styled(gain_maps, style::path));
+    auto gains = GainData(gain_maps, args.detector);
+    gains.upload();
+
     print("Connecting to {}\n",
           styled(format("tcp://{}:{}-{}",
                         args.zmq_host,
                         args.zmq_port,
                         args.zmq_port + args.zmq_listeners - 1),
                  style::url));
-
     {
         std::vector<std::jthread> threads;
         for (int port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
@@ -191,5 +210,6 @@ auto do_live(Arguments &args) -> void {
             }
         }
     }
+    // Only happens if we change to terminate
     print("All processing complete.\n");
 }
