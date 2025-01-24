@@ -266,4 +266,5 @@ auto GainData::upload() -> void {
     auto [ptr, pitch] = make_cuda_pitched_malloc<gain_t>(width, height * num_modules);
     _gpu_data = ptr;
     _gpu_pitch = pitch;
+    print("Pitch is: {}\n", pitch);
 }

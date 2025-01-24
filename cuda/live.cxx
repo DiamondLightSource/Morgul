@@ -159,16 +159,11 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
             num_images_seen = 0;
             highest_image_seen = 0;
         } else if (ret == 2) {
+            // Record the number of images we have seen vs recorded in
+            // the header. This will let us determine if we missed any.
             ++num_images_seen;
             highest_image_seen =
                 std::max(highest_image_seen, static_cast<int>(header.frameIndex + 1));
-            // print("{}: Received {},{}#{:5}: {}",
-            //       port,
-            //       header.column,
-            //       header.row,
-            //       header.frameIndex,
-            //       recv_msgs[0].to_string_view());
-            // print("       And size: {}\n", recv_msgs[1].size());
         } else {
             print(style::error,
                   "{}: Error: Got unexpected multipart message length {}\n",
@@ -188,9 +183,18 @@ auto do_live(Arguments &args) -> void {
     auto gain_maps = getenv_or("GAIN_MAPS", GAIN_MAPS).value();
     print("GPU:      {}\n", args.cuda_device_signature);
     print("Detector: {}\n", styled(args.detector, emphasis::bold));
-    // print("Using Gains:    {}\n", styled(gain_maps, style::path));
+
+    // Load calibration data into device memory for efficient access
     auto gains = GainData(gain_maps, args.detector);
     gains.upload();
+    // We can avoid carrying round pitch if we know the pitched array is unpadded
+    if (gains.pitch() != 1024) {
+        print(style::error,
+              "Error: Expected module gains to have unpadded pitch. Instead have "
+              "{}.",
+              gains.pitch());
+        std::exit(1);
+    }
 
     print("Connecting to {}\n",
           styled(format("tcp://{}:{}-{}",
