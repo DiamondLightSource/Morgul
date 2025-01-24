@@ -119,6 +119,9 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
     zmq::socket_t sub{ctx, zmq::socket_type::sub};
     sub.connect(format("tcp://{}:{}", args.zmq_host, port));
     sub.set(zmq::sockopt::subscribe, "");
+
+    int num_images_seen = 0;
+    int highest_image_seen = 0;
     while (true) {
         std::vector<zmq::message_t> recv_msgs;
         ++threads_waiting;
@@ -135,15 +138,22 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
         auto header = json.template get<SLSHeader>();
         if (ret == 1) {
             if (header.bitmode == 0) {
-                print("{}: Got end packet\n", port);
+                print("{}: Got end packet; saw {} / {} images.\n",
+                      port,
+                      num_images_seen,
+                      highest_image_seen);
             }
+            num_images_seen = 0;
+            highest_image_seen = 0;
         } else if (ret == 2) {
-            print("{}: Received {},{} {:5}/{:5}: {}",
+            ++num_images_seen;
+            highest_image_seen =
+                std::max(highest_image_seen, static_cast<int>(header.frameIndex + 1));
+            print("{}: Received {},{}#{:5}: {}",
                   port,
                   header.column,
                   header.row,
                   header.frameIndex,
-                  header.acqIndex,
                   recv_msgs[0].to_string_view());
             print("       And size: {}\n", recv_msgs[1].size());
         } else {
