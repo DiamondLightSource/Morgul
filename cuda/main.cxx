@@ -11,41 +11,42 @@ using namespace fmt;
 
 /// Parse the CLI arguments into an easily-passable arguments object
 auto do_argument_parsing(int argc, char **argv) -> Arguments {
+    Arguments args;
+
     auto parser = CUDAArgumentParser();
-    parser.add_argument("--detector").default_value(JF1M);
+    parser.add_argument("--detector").default_value(JF1M).store_into(args.detector);
     auto correct_parser = argparse::ArgumentParser("correct");
     correct_parser.add_argument("SOURCES")
         .help("Raw data files to run corrections on")
-        .nargs(argparse::nargs_pattern::at_least_one);
+        .nargs(argparse::nargs_pattern::at_least_one)
+        .store_into(args.sources);
     parser.add_subparser(correct_parser);
 
     auto live_parser = argparse::ArgumentParser("live");
     live_parser.add_argument("LISTENERS")
         .help("How many listeners to run (e.g. how many PUB sources)")
-        .scan<'i', decltype(Arguments::zmq_listeners)>();
+        .store_into(args.zmq_listeners);
     live_parser.add_argument("--zmq-port")
         .help(
             "The first port to listen to. Automatically incremented by 1 for each "
             "listener.")
-        .scan<'i', decltype(Arguments::zmq_port)>()
-        .default_value(30001);
+        .default_value(static_cast<decltype(Arguments::zmq_port)>(30001))
+        .store_into(args.zmq_port);
     live_parser.add_argument("--zmq-host")
         .help("The ZMQ host to connect to")
-        .default_value(std::string{"0.0.0.0"});
+        .default_value(std::string{"0.0.0.0"})
+        .store_into(args.zmq_host);
 
     parser.add_subparser(live_parser);
 
     auto cuargs = parser.parse_args(argc, argv);
-    Arguments args = {.verbose = cuargs.verbose,
-                      .cuda_device_index = cuargs.device_index,
-                      .detector = parser.get<std::string>("--detector"),
-                      .cuda_device_signature = fmt::format(
-                          "{} (CUDA {}.{})",
-                          fmt::styled(cuargs.device.name, fmt::emphasis::bold),
-                          cuargs.device.major,
-                          cuargs.device.minor),
-                      .zmq_host = parser.get<std::string>("--zmq-host"),
-                      .zmq_port = parser.get<uint16_t>("--zmq-port")};
+    args.verbose = cuargs.verbose;
+    args.cuda_device_index = cuargs.device_index;
+    args.cuda_device_signature =
+        fmt::format("{} (CUDA {}.{})",
+                    fmt::styled(cuargs.device.name, fmt::emphasis::bold),
+                    cuargs.device.major,
+                    cuargs.device.minor);
 
     if (!KNOWN_DETECTORS.contains(args.detector)) {
         print("Error: Unknown detector '{}'\n", args.detector);
@@ -53,11 +54,8 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
     }
     if (parser.is_subcommand_used(correct_parser)) {
         args.command = {"correct"};
-        args.sources = correct_parser.get<std::vector<std::string>>("SOURCES");
     } else if (parser.is_subcommand_used(live_parser)) {
         args.command = {"live"};
-        args.zmq_listeners =
-            correct_parser.get<decltype(Arguments::zmq_listeners)>("LISTENERS");
     } else {
         print("{}\n", parser.help().str());
         std::exit(1);
