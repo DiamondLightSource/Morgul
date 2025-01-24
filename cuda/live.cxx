@@ -1,5 +1,8 @@
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <iostream>
 #include <iterator>
 #include <nlohmann/json.hpp>
 #include <stop_token>
@@ -15,8 +18,31 @@
 
 using namespace fmt;
 using json = nlohmann::json;
+using namespace std::chrono_literals;
 
 std::stop_source global_stop;
+
+std::atomic_int threads_waiting;
+
+void wait_spinner(const std::string_view &message) {
+    static int index = 0;
+    std::this_thread::sleep_for(80ms);
+    std::vector<std::string> ball = {
+        "( ●    )",
+        "(  ●   )",
+        "(   ●  )",
+        "(    ● )",
+        "(     ●)",
+        "(    ● )",
+        "(   ●  )",
+        "(  ●   )",
+        "( ●    )",
+        "(●     )",
+    };
+    index = (index + 1) % ball.size();
+    print("  {} {}\r", message, ball[index]);
+    std::cout << std::flush;
+}
 
 class SLSHeader {
   public:
@@ -85,7 +111,6 @@ void from_json(const json &j, SLSHeader &h) {
 }
 
 auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> void {
-    print("{}: In listening thread.\n", port);
     // For now, each thread gets it's own context. We can experiment
     // with shared later. The Guide (not that one) suggests one IO
     // thread per GB/s of data, and we have 2 GB/s per module (e.g.
@@ -96,7 +121,9 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
     sub.set(zmq::sockopt::subscribe, "");
     while (true) {
         std::vector<zmq::message_t> recv_msgs;
+        ++threads_waiting;
         const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
+        --threads_waiting;
         if (!ret) {
             print(style::error,
                   "{}: Error: Got unexpected multipart message length {}\n",
@@ -109,7 +136,6 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
         if (ret == 1) {
             if (header.bitmode == 0) {
                 print("{}: Got end packet\n", port);
-                return;
             }
         } else if (ret == 2) {
             print("{}: Received {},{} {:5}/{:5}: {}",
@@ -148,6 +174,11 @@ auto do_live(Arguments &args) -> void {
         for (int port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
              ++port) {
             threads.emplace_back(zmq_listen, global_stop.get_token(), args, port);
+        }
+        while (true) {
+            while (threads_waiting == args.zmq_listeners) {
+                wait_spinner("All listeners waiting");
+            }
         }
     }
     print("All processing complete.\n");
