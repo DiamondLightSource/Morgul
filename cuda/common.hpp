@@ -32,7 +32,7 @@ struct fmt::formatter<std::chrono::time_point<std::chrono::utc_clock, T>>
     auto format(std::chrono::time_point<std::chrono::utc_clock, T> c,
                 format_context &ctx) const -> format_context::iterator {
         std::stringstream ss;
-        ss << std::format("{:%Y-%m-%d %H:%M:%S}", c);
+        ss << fmt::format(fmt::runtime("{:%Y-%m-%d %H:%M:%S}"), c);
         return formatter<string_view>::format(ss.str(), ctx);
     }
 };

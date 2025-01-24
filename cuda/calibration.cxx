@@ -64,7 +64,8 @@ auto get_applicable_calibration_paths(
         }
         // convert this to the UTC clock time, for comparison
         // ts = std::chrono::clock_cast<std::chrono::utc_clock>(ts_parse);
-        ts = std::chrono::utc_clock::from_sys(ts_parse);
+        // WARNING: Disabled for GCC 11 but probably needs conversion
+        // ts = std::chrono::utc_clock::from_sys(ts_parse);
 
         if (ts < timestamp) {
             if (record_kind == "PEDESTAL") {

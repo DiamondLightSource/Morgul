@@ -1,5 +1,7 @@
 #include "hdf5_tools.hpp"
 
+#include <cstdlib>
+
 auto H5Iget_name(hid_t identifier) -> std::optional<std::string> {
     ssize_t name_size = H5Iget_name(identifier, NULL, 0);
     if (name_size == 0) {
@@ -50,8 +52,9 @@ auto read_single_hdf5_value(hid_t root_group, const std::string path)
 }
 
 template <typename T>
-auto _read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
-    -> zeus::expected<Array2D<T>, std::string> {
+zeus::expected<Array2D<T>, std::string> _read_2d_dataset(
+    hid_t root_group,
+    std::string_view path_to_dataset) {
     auto dataset =
         H5Cleanup<H5Dclose>(H5Dopen(root_group, path_to_dataset.data(), H5P_DEFAULT));
     if (dataset == H5I_INVALID_HID) {
@@ -74,8 +77,11 @@ auto _read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
     } else if constexpr (std::is_same_v<T, double>) {
         hdf5_type = H5T_NATIVE_DOUBLE;
     } else {
-        static_assert(false, "Unrecognised data type for reading 2D array");
+        // This static assert is failing, but on a float?
+        std::exit("Unrecognised data type for reading 2D array");
+        // static_assert(false, "Unrecognised data type for reading 2D array");
     }
+
     // std::vector<T> buffer(dims[0] * dims[1]);
     auto data = std::make_unique<T[]>(dims[0] * dims[1]);
     if (H5Dread(dataset, hdf5_type, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.get()) < 0) {
