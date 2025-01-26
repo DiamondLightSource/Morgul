@@ -141,20 +141,18 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
     // Once we receive an HMI, we must always receive the same one
     std::optional<uint32_t> known_hmi;
 
+    // Keep track of how many images we have seen/the highest index.
+    // since the last end-packet.
     int num_images_seen = 0;
     int highest_image_seen = 0;
-    while (true) {
+
+    while (!stop.stop_requested()) {
         std::vector<zmq::message_t> recv_msgs;
+        // Wait for the next message. Count waiting so we know when we are idle.
         ++threads_waiting;
         const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
         --threads_waiting;
-        if (!ret) {
-            print(style::error,
-                  "{}: Error: Got unexpected multipart message length {}\n",
-                  port,
-                  ret);
-            throw std::runtime_error("Unexpected multipart message");
-        }
+        assert(ret);
         auto json = json::parse(recv_msgs[0].to_string_view());
         auto header = json.template get<SLSHeader>();
         if (ret == 1) {
@@ -208,6 +206,8 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
                 std::exit(1);
             }
         }
+
+        // If here, then we have an expected next packet
     }
 }
 
@@ -237,7 +237,7 @@ auto do_live(Arguments &args) -> void {
                  style::url));
     {
         std::vector<std::jthread> threads;
-        for (int port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
+        for (uint16_t port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
              ++port) {
             threads.emplace_back(zmq_listen, global_stop.get_token(), args, port);
         }
