@@ -21,10 +21,13 @@ using namespace fmt;
 using json = nlohmann::json;
 using namespace std::chrono_literals;
 
-const auto PREVIOUS_PEDESTAL = std::filesystem::path{"/dev/shm/current_pedestal.h5"};
+/// Location of some pedestal data to load. Make this automatic/specifiable later
+const auto PEDESTAL_DATA = std::filesystem::path{
+    "/scratch/nickd/PEDESTALS/jf1md_0.5ms_2024-10-03_12-42-49_pedestal.h5"};
 
 std::stop_source global_stop;
 
+/// Count how many threads are waiting, so we know if everything is idle
 std::atomic_int threads_waiting;
 
 /// Get an environment variable if present, with optional default
@@ -158,18 +161,17 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
             }
             num_images_seen = 0;
             highest_image_seen = 0;
-        } else if (ret == 2) {
-            // Record the number of images we have seen vs recorded in
-            // the header. This will let us determine if we missed any.
-            ++num_images_seen;
-            highest_image_seen =
-                std::max(highest_image_seen, static_cast<int>(header.frameIndex + 1));
-        } else {
+            continue;
+        } else if (ret != 2) {
             print(style::error,
                   "{}: Error: Got unexpected multipart message length {}\n",
                   port,
                   ret);
+            continue;
         }
+        // We have a standard image packet
+
+        // auto hmi = header.shape
     }
 }
 
@@ -187,14 +189,9 @@ auto do_live(Arguments &args) -> void {
     // Load calibration data into device memory for efficient access
     auto gains = GainData(gain_maps, args.detector);
     gains.upload();
-    // We can avoid carrying round pitch if we know the pitched array is unpadded
-    if (gains.pitch() != 1024) {
-        print(style::error,
-              "Error: Expected module gains to have unpadded pitch. Instead have "
-              "{}.",
-              gains.pitch());
-        std::exit(1);
-    }
+
+    auto pedestals = PedestalData(PEDESTAL_DATA, args.detector);
+    pedestals.upload();
 
     print("Connecting to {}\n",
           styled(format("tcp://{}:{}-{}",

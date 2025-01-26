@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -37,7 +38,11 @@ class PedestalData {
         return _exposure_time;
     }
 
+    void upload();
+
   private:
+    std::shared_ptr<pedestal_t[]> _gpu_data;
+    std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     ModuleMode _module_mode;
     std::map<size_t, std::map<uint8_t, Array2D<pedestal_t>>> _modules;
@@ -48,10 +53,17 @@ class GainData {
     typedef double gain_t;
 
   public:
+    using GainPtrs = std::array<gain_t*, GAIN_MODES.size()>;
+
     GainData(std::filesystem::path path, Detector detector);
     void upload();
     auto pitch() {
+        assert(_gpu_data);
         return _gpu_pitch;
+    }
+    auto get_gpu_ptrs(size_t hmi) {
+        assert(_gpu_data);
+        return _gpu_modules[hmi];
     }
 
   private:
@@ -59,4 +71,5 @@ class GainData {
     std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     std::map<size_t, std::map<uint8_t, Array2D<gain_t>>> _modules;
+    std::map<size_t, GainPtrs> _gpu_modules;
 };

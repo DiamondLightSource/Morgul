@@ -143,7 +143,9 @@ PedestalData::PedestalData(std::filesystem::path path, Detector detector)
     _module_mode = module_mode_from(
         read_single_hdf5_value<std::string>(file, "/module_mode").value());
     _exposure_time = read_single_hdf5_value<float>(file, "/exptime").value();
-    print("Got exposure time: {}\n", styled(_exposure_time, style::number));
+    print("Reading pedestals for exposure time {} ms from {}\n",
+          styled(_exposure_time * 1000, style::number),
+          styled(path, style::path));
     auto [n_cols, n_rows] = DETECTOR_SIZE.at(detector);
 
     // We want to support two forms of pedestal file;
@@ -180,6 +182,30 @@ PedestalData::PedestalData(std::filesystem::path path, Detector detector)
                     read_2d_dataset<pedestal_t>(file, dataset_name).value();
             }
         }
+    }
+}
+
+auto PedestalData::upload() -> void {
+    // auto width = std::get<0>(MODULE_SHAPE);
+    // auto height = std::get<1>(HALF_MODULE_SHAPE);
+    size_t num_modules = _modules.size();
+
+    if (_module_mode != ModuleMode::HALF) {
+        print(style::error, "Error: Only support GPU upload on halfmodule pedestals");
+        std::exit(1);
+    }
+    auto [ptr, pitch] = make_cuda_pitched_malloc<pedestal_t>(
+        HM_WIDTH, HM_HEIGHT * num_modules * GAIN_MODES.size());
+    _gpu_data = ptr;
+    _gpu_pitch = pitch;
+
+    // We can avoid carrying round pitch if we know the pitched array is unpadded
+    if (_gpu_pitch != 1024) {
+        print(style::error,
+              "Error: Expected module pedestals to have unpadded pitch. Instead have "
+              "{}.",
+              _gpu_pitch);
+        std::exit(1);
     }
 }
 
@@ -259,12 +285,37 @@ GainData::GainData(std::filesystem::path path, Detector detector) : _path(path) 
 }
 
 auto GainData::upload() -> void {
-    auto width = std::get<0>(MODULE_SHAPE);
-    auto height = std::get<1>(MODULE_SHAPE);
-    size_t num_modules = _modules.size();
+    size_t num_modules = _modules.size() * GAIN_MODES.size();
 
-    auto [ptr, pitch] = make_cuda_pitched_malloc<gain_t>(width, height * num_modules);
+    auto [ptr, pitch] =
+        make_cuda_pitched_malloc<gain_t>(HM_WIDTH, HM_HEIGHT * num_modules);
     _gpu_data = ptr;
     _gpu_pitch = pitch;
-    print("Pitch is: {}\n", pitch);
+
+    // We can avoid carrying round pitch if we know the pitched array is unpadded
+    if (_gpu_pitch != 1024) {
+        print(style::error,
+              "Error: Expected module gains to have unpadded pitch. Instead have "
+              "{}.",
+              _gpu_pitch);
+        std::exit(1);
+    }
+    // Copy each halfmodules gain modes into device memory
+    gain_t *target_ptr = _gpu_data.get();
+    for (const auto &[hmi, gain_modes] : _modules) {
+        GainPtrs dev_ptrs;
+        for (int i = 0; i < GAIN_MODES.size(); ++i) {
+            dev_ptrs[i] = target_ptr;
+            auto &data = gain_modes.at(GAIN_MODES[i]);
+            assert(HM_WIDTH == data.width());
+            assert(HM_HEIGHT == data.height());
+            assert(1024 == data.stride());
+            CUDA_CHECK(cudaMemcpy(target_ptr,
+                                  data.data().data(),
+                                  sizeof(gain_t) * HM_WIDTH * HM_HEIGHT,
+                                  cudaMemcpyHostToDevice));
+            target_ptr += HM_HEIGHT * HM_WIDTH;
+        }
+        _gpu_modules[hmi] = dev_ptrs;
+    }
 }
