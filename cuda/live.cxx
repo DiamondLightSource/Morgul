@@ -243,8 +243,12 @@ auto do_live(Arguments &args) -> void {
         std::vector<std::jthread> threads;
         for (uint16_t port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
              ++port) {
-            threads.emplace_back(
-                zmq_listen, global_stop.get_token(), args, gains, pedestals, port);
+            threads.emplace_back(zmq_listen,
+                                 global_stop.get_token(),
+                                 args,
+                                 std::cref(gains),
+                                 std::cref(pedestals),
+                                 port);
         }
         while (true) {
             while (threads_waiting == args.zmq_listeners) {
