@@ -1,4 +1,6 @@
 
+#include <fmt/ranges.h>
+
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -136,6 +138,9 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
     sub.connect(format("tcp://{}:{}", args.zmq_host, port));
     sub.set(zmq::sockopt::subscribe, "");
 
+    // Once we receive an HMI, we must always receive the same one
+    std::optional<uint32_t> known_hmi;
+
     int num_images_seen = 0;
     int highest_image_seen = 0;
     while (true) {
@@ -171,7 +176,38 @@ auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> v
         }
         // We have a standard image packet
 
-        // auto hmi = header.shape
+        // Validate this matches our expectations
+        if (header.shape != std::array{1024u, 256u}) {
+            print(style::error,
+                  "{}: Error: Got wrong sized image ({}), expected (1024,256)",
+                  port,
+                  header.shape);
+            continue;
+        }
+        uint32_t det_x = std::get<0>(DETECTOR_SIZE.at(args.detector));
+        uint32_t det_y = std::get<1>(DETECTOR_SIZE.at(args.detector)) * 2;
+        if (header.detshape != std::array{det_x, det_y}) {
+            print(style::error,
+                  "{}: Error: Got wrong sized detector {}; expected {},{}",
+                  port,
+                  header.detshape,
+                  det_x,
+                  det_y);
+            continue;
+        }
+        print("{}: {}", port, recv_msgs[0].to_string_view());
+        auto hmi = header.column * det_y + header.row;
+        if (!known_hmi) {
+            known_hmi = hmi;
+        } else {
+            if (known_hmi != hmi) {
+                print(style::error,
+                      "{}: Fatal Error: Got fed mix of module index; are your routing "
+                      "crossed?",
+                      port);
+                std::exit(1);
+            }
+        }
     }
 }
 
