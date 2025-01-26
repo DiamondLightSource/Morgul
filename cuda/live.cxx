@@ -128,7 +128,11 @@ void from_json(const json &j, SLSHeader &h) {
     }
 }
 
-auto zmq_listen(std::stop_token stop, const Arguments &args, uint16_t port) -> void {
+auto zmq_listen(std::stop_token stop,
+                const Arguments &args,
+                const GainData &gains,
+                const PedestalData &pedestals,
+                uint16_t port) -> void {
     // For now, each thread gets it's own context. We can experiment
     // with shared later. The Guide (not that one) suggests one IO
     // thread per GB/s of data, and we have 2 GB/s per module (e.g.
@@ -239,7 +243,8 @@ auto do_live(Arguments &args) -> void {
         std::vector<std::jthread> threads;
         for (uint16_t port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
              ++port) {
-            threads.emplace_back(zmq_listen, global_stop.get_token(), args, port);
+            threads.emplace_back(
+                zmq_listen, global_stop.get_token(), args, gains, pedestals, port);
         }
         while (true) {
             while (threads_waiting == args.zmq_listeners) {
