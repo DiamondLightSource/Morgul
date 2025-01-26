@@ -216,11 +216,12 @@ auto zmq_listen(std::stop_token stop,
             }
         }
         // If here, then we have an expected next packet
-        do_jungfrau_image_corrections(stream,
-                                      gains.get_gpu_ptrs(hmi),
-                                      pedestals.get_gpu_ptrs(hmi),
-                                      static_cast<uint16_t *>(recv_msgs[1].data()),
-                                      0);
+        // send it to the GPU for processing
+        call_jungfrau_image_corrections(stream,
+                                        gains.get_gpu_ptrs(hmi),
+                                        pedestals.get_gpu_ptrs(hmi),
+                                        static_cast<uint16_t *>(recv_msgs[1].data()),
+                                        0);
         CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 }
