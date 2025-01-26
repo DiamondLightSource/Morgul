@@ -207,6 +207,24 @@ auto PedestalData::upload() -> void {
               _gpu_pitch);
         std::exit(1);
     }
+    // Copy each halfmodules gain modes into device memory
+    pedestal_t *target_ptr = _gpu_data.get();
+    for (const auto &[hmi, gain_modes] : _modules) {
+        GainModePointers dev_ptrs;
+        for (int i = 0; i < GAIN_MODES.size(); ++i) {
+            dev_ptrs[i] = target_ptr;
+            auto &data = gain_modes.at(GAIN_MODES[i]);
+            assert(HM_WIDTH == data.width());
+            assert(HM_HEIGHT == data.height());
+            assert(1024 == data.stride());
+            CUDA_CHECK(cudaMemcpy(target_ptr,
+                                  data.data().data(),
+                                  sizeof(pedestal_t) * HM_WIDTH * HM_HEIGHT,
+                                  cudaMemcpyHostToDevice));
+            target_ptr += HM_HEIGHT * HM_WIDTH;
+        }
+        _gpu_modules[hmi] = dev_ptrs;
+    }
 }
 
 GainData::GainData(std::filesystem::path path, Detector detector) : _path(path) {
@@ -303,7 +321,7 @@ auto GainData::upload() -> void {
     // Copy each halfmodules gain modes into device memory
     gain_t *target_ptr = _gpu_data.get();
     for (const auto &[hmi, gain_modes] : _modules) {
-        GainPtrs dev_ptrs;
+        GainModePointers dev_ptrs;
         for (int i = 0; i < GAIN_MODES.size(); ++i) {
             dev_ptrs[i] = target_ptr;
             auto &data = gain_modes.at(GAIN_MODES[i]);

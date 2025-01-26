@@ -29,6 +29,7 @@ class PedestalData {
     typedef double pedestal_t;
 
   public:
+    using GainModePointers = std::array<pedestal_t*, GAIN_MODES.size()>;
     PedestalData(std::filesystem::path path, Detector detector);
     auto get_pedestal(size_t halfmodule_index, uint8_t gain_mode) const
         -> const Array2D<pedestal_t>& {
@@ -40,20 +41,47 @@ class PedestalData {
 
     void upload();
 
+    auto get_gpu_ptrs(size_t hmi) {
+        assert(_gpu_data);
+        return _gpu_modules[hmi];
+    }
+
   private:
     std::shared_ptr<pedestal_t[]> _gpu_data;
     std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     ModuleMode _module_mode;
     std::map<size_t, std::map<uint8_t, Array2D<pedestal_t>>> _modules;
+    std::map<size_t, GainModePointers> _gpu_modules;
     float _exposure_time;
 };
 
-class GainData {
-    typedef double gain_t;
+// template <typename T>
+// class PerModuleData {
+//   public:
+//     typedef T value_t;
+//     using GainModePtrs = std::array<T*, GAIN_MODES.size()>;
+//     void upload();
+//     auto pitch() {
+//         assert(_gpu_data);
+//         return _gpu_pitch;
+//     }
+//     auto get_gpu_ptrs(size_t hmi) {
+//         assert(_gpu_data);
+//         return _gpu_modules[hmi];
+//     }
 
+//   private:
+//     std::shared_ptr<T[]> _gpu_data;
+//     std::optional<size_t> _gpu_pitch;
+//     std::map<size_t, std::map<decltype(GAIN_MODES)::value_type, Array2D<T>>> _modules;
+//     std::map<size_t, GainModePtrs> _gpu_modules;
+// };
+
+class GainData {
   public:
-    using GainPtrs = std::array<gain_t*, GAIN_MODES.size()>;
+    using gain_t = double;
+    using GainModePointers = std::array<gain_t*, GAIN_MODES.size()>;
 
     GainData(std::filesystem::path path, Detector detector);
     void upload();
@@ -71,5 +99,5 @@ class GainData {
     std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     std::map<size_t, std::map<uint8_t, Array2D<gain_t>>> _modules;
-    std::map<size_t, GainPtrs> _gpu_modules;
+    std::map<size_t, GainModePointers> _gpu_modules;
 };
