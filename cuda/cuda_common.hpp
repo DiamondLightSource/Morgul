@@ -1,5 +1,4 @@
-#ifndef CUDA_COMMON_H
-#define CUDA_COMMON_H
+#pragma once
 
 #include <cuda_runtime.h>
 #include <fmt/core.h>
@@ -16,13 +15,6 @@
 #include <vector>
 
 #include "common.hpp"
-
-#if __has_include(<hdf5.h>)
-#define HAS_HDF5
-namespace _hdf5 {
-#include <hdf5.h>
-}
-#endif
 
 class cuda_error : public std::runtime_error {
   public:
@@ -417,5 +409,3 @@ void save_device_data_to_txt(PixelType *device_ptr,
         }
     }
 }
-
-#endif

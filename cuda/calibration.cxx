@@ -19,11 +19,10 @@
 
 #include "common.hpp"
 #include "constants.hpp"
+#include "cuda_common.hpp"
 #include "hdf5_tools.hpp"
 
 using namespace fmt;
-// Causes conflict if imported before hdf5?
-#include "cuda_common.hpp"
 
 /// Read the calibration log to find the correct calibration data sets
 auto get_applicable_calibration_paths(

@@ -41,9 +41,9 @@ class PedestalData {
 
     void upload();
 
-    auto get_gpu_ptrs(size_t hmi) {
+    auto get_gpu_ptrs(size_t hmi) const {
         assert(_gpu_data);
-        return _gpu_modules[hmi];
+        return _gpu_modules.at(hmi);
     }
 
   private:
@@ -89,9 +89,9 @@ class GainData {
         assert(_gpu_data);
         return _gpu_pitch;
     }
-    auto get_gpu_ptrs(size_t hmi) {
+    auto get_gpu_ptrs(size_t hmi) const {
         assert(_gpu_data);
-        return _gpu_modules[hmi];
+        return _gpu_modules.at(hmi);
     }
 
   private:

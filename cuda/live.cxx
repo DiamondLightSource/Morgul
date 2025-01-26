@@ -17,7 +17,9 @@
 #include "commands.hpp"
 #include "common.hpp"
 #include "constants.hpp"
+#include "cuda_common.hpp"
 #include "hdf5_tools.hpp"
+#include "kernels.h"
 
 using namespace fmt;
 using json = nlohmann::json;
@@ -150,6 +152,9 @@ auto zmq_listen(std::stop_token stop,
     int num_images_seen = 0;
     int highest_image_seen = 0;
 
+    // Use our own stream
+    CudaStream stream;
+
     while (!stop.stop_requested()) {
         std::vector<zmq::message_t> recv_msgs;
         // Wait for the next message. Count waiting so we know when we are idle.
@@ -210,8 +215,13 @@ auto zmq_listen(std::stop_token stop,
                 std::exit(1);
             }
         }
-
         // If here, then we have an expected next packet
+        do_jungfrau_image_corrections(stream,
+                                      gains.get_gpu_ptrs(hmi),
+                                      pedestals.get_gpu_ptrs(hmi),
+                                      static_cast<uint16_t *>(recv_msgs[1].data()),
+                                      0);
+        CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 }
 
