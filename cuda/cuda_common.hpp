@@ -28,6 +28,7 @@ inline auto cuda_error_string(cudaError_t err) {
 }
 inline auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
     if (err != cudaSuccess) {
+        fmt::print("Got error string: {}\n", cuda_error_string(err));
         throw cuda_error(
             fmt::format("{}:{}: {}", file, line_num, cuda_error_string(err)));
     }

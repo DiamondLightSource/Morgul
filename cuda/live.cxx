@@ -216,6 +216,9 @@ auto zmq_listen(std::stop_token stop,
             }
         }
         // If here, then we have an expected next packet
+        ++num_images_seen;
+        highest_image_seen =
+            std::max(highest_image_seen, {static_cast<int>(header.frameIndex + 1)});
         // send it to the GPU for processing
         call_jungfrau_image_corrections(stream,
                                         gains.get_gpu_ptrs(hmi),
