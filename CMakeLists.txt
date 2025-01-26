@@ -65,6 +65,7 @@ add_executable(
     cuda/calibration.cxx
     cuda/hdf5_tools.cxx
     cuda/live.cxx
+    cuda/kernels.cu
 )
 target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_link_libraries(
@@ -80,4 +81,5 @@ target_link_libraries(
     zeus::expected
     cppzmq
 )
-# set_target_properties(morgul-cuda PROPERTIES CXX_CLANG_TIDY "clang-tidy;-checks=-*,readability-*;--use-color")
+target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
+# target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
