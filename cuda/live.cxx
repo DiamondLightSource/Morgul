@@ -141,7 +141,7 @@ auto zmq_listen(std::stop_token stop,
     // each IO thread can cope with one half-module).
     zmq::context_t ctx;
     zmq::socket_t sub{ctx, zmq::socket_type::sub};
-    sub.connect(format("tcp://{}:{}", args.zmq_host, port));
+    sub.connect(fmt::format("tcp://{}:{}", args.zmq_host, port));
     sub.set(zmq::sockopt::subscribe, "");
 
     // Once we receive an HMI, we must always receive the same one
@@ -245,10 +245,10 @@ auto do_live(Arguments &args) -> void {
     pedestals.upload();
 
     print("Connecting to {}\n",
-          styled(format("tcp://{}:{}-{}",
-                        args.zmq_host,
-                        args.zmq_port,
-                        args.zmq_port + args.zmq_listeners - 1),
+          styled(fmt::format("tcp://{}:{}-{}",
+                             args.zmq_host,
+                             args.zmq_port,
+                             args.zmq_port + args.zmq_listeners - 1),
                  style::url));
     {
         std::vector<std::jthread> threads;
