@@ -8,7 +8,11 @@
 const auto GAIN_MAPS = std::filesystem::path{"/dls_sw/apps/jungfrau/calibration"};
 
 using Detector = std::string;
-constexpr static Detector JF1M{"JF1M"};
+
+// Give ourselves a way to identify old cuda e.g. less than stellar constexpre support
+#if __CUDACC_VER_MAJOR__ == 12 && __CUDAACC_VER_MINOR__ <= 2
+#define OLD_CUDA
+#endif
 
 constexpr static std::tuple<uint16_t, uint16_t> MODULE_SHAPE{1024, 512};
 constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 256};
@@ -16,12 +20,16 @@ constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 256};
 constexpr static uint16_t HM_WIDTH = std::get<0>(HALF_MODULE_SHAPE);
 constexpr static uint16_t HM_HEIGHT = std::get<1>(HALF_MODULE_SHAPE);
 
+#ifndef OLD_CUDA
+constexpr static Detector JF1M{"JF1M"};
+
 /// Maps detector name to known module names and positions
 const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
     {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
 
 /// Size of detector, in (columns, rows)
 const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}}};
+#endif
 
 /// Names for gain modes
 constexpr std::array<uint8_t, 3> GAIN_MODES{0, 1, 2};

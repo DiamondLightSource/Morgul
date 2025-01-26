@@ -36,10 +36,16 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .help("The ZMQ host to connect to")
         .default_value(std::string{"0.0.0.0"})
         .store_into(args.zmq_host);
+    live_parser.add_argument("--energy")
+        .default_value(12.398425f)
+        .help("Energy (KeV)")
+        .store_into(args.energy);
 
     parser.add_subparser(live_parser);
 
     auto cuargs = parser.parse_args(argc, argv);
+    print("Energy: {}\n", args.energy);
+
     args.verbose = cuargs.verbose;
     args.cuda_device_index = cuargs.device_index;
     args.cuda_device_signature =

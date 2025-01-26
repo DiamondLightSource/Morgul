@@ -34,7 +34,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 FetchContent_Declare(
     argparse
     GIT_REPOSITORY  https://github.com/p-ranav/argparse
-    GIT_TAG 68fd0277eea5412aff9b91c0b70efc698359dae0 # 6.3.1
+    GIT_TAG 3eda91b2e1ce7d569f84ba295507c4cd8fd96910 # v3.2
 )
 FetchContent_MakeAvailable(argparse)
 FetchContent_Declare(
