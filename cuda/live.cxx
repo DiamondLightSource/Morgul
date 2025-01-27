@@ -93,7 +93,7 @@ class SLSHeader {
     uint32_t version;
     uint32_t flipRows;
     uint32_t quad;
-    std::string addJsonHeader;
+    std::optional<json> addJsonHeader;
 };
 void from_json(const json &j, SLSHeader &h) {
     j.at("jsonversion").get_to(h.jsonversion);
@@ -126,7 +126,7 @@ void from_json(const json &j, SLSHeader &h) {
     j.at("shape")[0].get_to(h.shape[0]);
     j.at("shape")[1].get_to(h.shape[1]);
     if (j.contains("addJsonHeader")) {
-        j.at("addJsonHeader").get_to(h.addJsonHeader);
+        h.addJsonHeader = j.at("addJsonHeader");
     }
 }
 

@@ -37,7 +37,7 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .default_value(std::string{"0.0.0.0"})
         .store_into(args.zmq_host);
     live_parser.add_argument("--energy")
-        .default_value(12.398425f)
+        .default_value(12.398425)
         .help("Energy (KeV)")
         .store_into(args.energy);
 
