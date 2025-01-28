@@ -3,6 +3,7 @@
 
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -33,7 +34,10 @@ const auto PEDESTAL_DATA = std::filesystem::path{
 std::stop_source global_stop;
 
 /// Count how many threads are waiting, so we know if everything is idle
-std::atomic_int threads_waiting;
+std::atomic_int threads_waiting{0};
+/// Used to identify the first validation each acquisition, to avoid spamming
+std::atomic_bool is_first_validation_this_acquisition{false};
+std::atomic_int acquisition_number{0};
 
 /// Get an environment variable if present, with optional default
 auto getenv_or(std::string name, std::optional<std::string> _default = std::nullopt)
@@ -45,9 +49,9 @@ auto getenv_or(std::string name, std::optional<std::string> _default = std::null
     return {data};
 }
 
-void wait_spinner(const std::string_view &message) {
+/// Print a spinner animation, then return the number of characters printed
+int spinner(const std::string_view &message) {
     static int index = 0;
-    std::this_thread::sleep_for(80ms);
     std::vector<std::string> ball = {
         "( ●    )",
         "(  ●   )",
@@ -61,8 +65,9 @@ void wait_spinner(const std::string_view &message) {
         "(●     )",
     };
     index = (index + 1) % ball.size();
-    print("  {} {}\r", message, ball[index]);
-    std::cout << std::flush;
+    std::string msg = fmt::format("  {} {}\r", message, ball[index]);
+    std::cout << msg << std::flush;
+    return msg.size();
 }
 
 struct DLSHeaderAdditions {
@@ -149,7 +154,117 @@ void from_json(const json &j, SLSHeader &h) {
     }
 }
 
+class DataStreamHandler {
+  public:
+    // Once we receive an HMI, we must always receive the same one
+    std::optional<uint32_t> known_hmi;
+
+    // Keep track of how many images we have seen/the highest index.
+    // since the last end-packet.
+    int num_images_seen = 0;
+    int highest_image_seen = 0;
+    // Keep track of the last frame number seen, so we know if a frame was skipped
+    uint64_t hm_frameNumber = 0;
+
+    DataStreamHandler(const Arguments &args,
+                      uint16_t port,
+                      const CudaStream &stream,
+                      const GainData &gains,
+                      const PedestalData &pedestals)
+        : _args(args), _port(port), stream(stream), gains(gains), pedestals(pedestals) {
+        is_first_validation_this_acquisition.store(true);
+    }
+
+    auto validate_header(const SLSHeader &header) -> bool;
+    auto process_frame(const SLSHeader &header, const std::span<uint16_t> &frame)
+        -> void;
+    auto end_acquisition() -> void;
+
+  private:
+    const Arguments &_args;
+    uint16_t _port;
+    const CudaStream &stream;
+    const GainData &gains;
+    const PedestalData &pedestals;
+};
+
+auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
+    // Once per acquisition, the first thread through gets this flag
+    bool _expected = true;
+    bool first_acquisition =
+        is_first_validation_this_acquisition.compare_exchange_strong(_expected, false);
+
+    // Validate this matches our expectations
+    if (header.shape != std::array{1024u, 256u}) {
+        if (first_acquisition) {
+            print(style::error,
+                  "{}: Error: Got wrong sized image ({}), expected (1024,256)",
+                  _port,
+                  header.shape);
+        }
+        return false;
+    }
+    uint32_t det_x = std::get<0>(DETECTOR_SIZE.at(_args.detector));
+    uint32_t det_y = std::get<1>(DETECTOR_SIZE.at(_args.detector)) * 2;
+    if (header.detshape != std::array{det_x, det_y}) {
+        if (first_acquisition) {
+            print(style::error,
+                  "{}: Error: Got wrong sized detector {}; expected {},{}",
+                  _port,
+                  header.detshape,
+                  det_x,
+                  det_y);
+        }
+        return false;
+    }
+    auto hmi = header.column * det_y + header.row;
+    if (!known_hmi) {
+        known_hmi = hmi;
+    } else {
+        if (known_hmi != hmi) {
+            print(style::error,
+                  "{}: Fatal Error: Got fed mix of module index; hmi={} instead of "
+                  "initial {} are your routing "
+                  "crossed?",
+                  _port,
+                  hmi,
+                  known_hmi);
+            std::exit(1);
+        }
+    }
+    if (!header.dls.energy) {
+        if (first_acquisition) {
+            print(style::warning,
+                  "Warning: Did not get energy in addJsonHeader packet\n");
+        }
+    }
+
+    // If here, then we have an expected next packet
+    ++num_images_seen;
+    highest_image_seen =
+        std::max(highest_image_seen, {static_cast<int>(header.frameIndex + 1)});
+    return true;
+}
+
+auto DataStreamHandler::process_frame(const SLSHeader &header,
+                                      const std::span<uint16_t> &frame) -> void {
+    auto energy = header.dls.energy.value_or(12.4);
+    // print("Got Energy: {} -> {}\n", header.dls.energy, energy);
+    // send it to the GPU for processing
+    call_jungfrau_image_corrections(stream,
+                                    gains.get_gpu_ptrs(known_hmi.value()),
+                                    pedestals.get_gpu_ptrs(known_hmi.value()),
+                                    frame.data(),
+                                    energy);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+}
+
+auto DataStreamHandler::end_acquisition() -> void {
+    is_first_validation_this_acquisition.store(false);
+}
+
 auto zmq_listen(std::stop_token stop,
+                std::barrier<> &sync_barrier,
                 const Arguments &args,
                 const GainData &gains,
                 const PedestalData &pedestals,
@@ -163,16 +278,8 @@ auto zmq_listen(std::stop_token stop,
     sub.connect(fmt::format("tcp://{}:{}", args.zmq_host, port));
     sub.set(zmq::sockopt::subscribe, "");
 
-    // Once we receive an HMI, we must always receive the same one
-    std::optional<uint32_t> known_hmi;
-
-    // Keep track of how many images we have seen/the highest index.
-    // since the last end-packet.
-    int num_images_seen = 0;
-    int highest_image_seen = 0;
-
-    // Use our own stream
     CudaStream stream;
+    DataStreamHandler handler(args, port, stream, gains, pedestals);
 
     while (!stop.stop_requested()) {
         std::vector<zmq::message_t> recv_msgs;
@@ -181,17 +288,11 @@ auto zmq_listen(std::stop_token stop,
         const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
         --threads_waiting;
         assert(ret);
-        auto json = json::parse(recv_msgs[0].to_string_view());
-        auto header = json.template get<SLSHeader>();
-        if (ret == 1) {
-            if (header.bitmode == 0) {
-                print("{}: Got end packet; saw {} / {} images.\n",
-                      port,
-                      num_images_seen,
-                      highest_image_seen);
-            }
-            num_images_seen = 0;
-            highest_image_seen = 0;
+        print("{}: {}", port, recv_msgs[0].to_string_view());
+        auto header =
+            json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
+        if (ret == 1 && header.bitmode == 0) {
+            handler.end_acquisition();
             continue;
         } else if (ret != 2) {
             print(style::error,
@@ -201,57 +302,13 @@ auto zmq_listen(std::stop_token stop,
             continue;
         }
         // We have a standard image packet
-
-        // Validate this matches our expectations
-        if (header.shape != std::array{1024u, 256u}) {
-            print(style::error,
-                  "{}: Error: Got wrong sized image ({}), expected (1024,256)",
-                  port,
-                  header.shape);
+        // Validate the header, and skip this image if invalid
+        if (!handler.validate_header(header)) {
             continue;
         }
-        uint32_t det_x = std::get<0>(DETECTOR_SIZE.at(args.detector));
-        uint32_t det_y = std::get<1>(DETECTOR_SIZE.at(args.detector)) * 2;
-        if (header.detshape != std::array{det_x, det_y}) {
-            print(style::error,
-                  "{}: Error: Got wrong sized detector {}; expected {},{}",
-                  port,
-                  header.detshape,
-                  det_x,
-                  det_y);
-            continue;
-        }
-        print("{}: {}", port, recv_msgs[0].to_string_view());
-        auto hmi = header.column * det_y + header.row;
-        if (!known_hmi) {
-            known_hmi = hmi;
-        } else {
-            if (known_hmi != hmi) {
-                print(style::error,
-                      "{}: Fatal Error: Got fed mix of module index; are your routing "
-                      "crossed?",
-                      port);
-                std::exit(1);
-            }
-        }
-        // If here, then we have an expected next packet
-        ++num_images_seen;
-        highest_image_seen =
-            std::max(highest_image_seen, {static_cast<int>(header.frameIndex + 1)});
-        if (!header.dls.energy) {
-            print(
-                style::warning,
-                "Warning: Did not get energy in addJsonHeader packet, assuming 12.4 Å");
-            header.dls.energy = {12.4};
-        }
-        print("Got Energy: {}\n", header.dls.energy);
-        // send it to the GPU for processing
-        call_jungfrau_image_corrections(stream,
-                                        gains.get_gpu_ptrs(hmi),
-                                        pedestals.get_gpu_ptrs(hmi),
-                                        static_cast<uint16_t *>(recv_msgs[1].data()),
-                                        header.dls.energy.value());
-        CUDA_CHECK(cudaStreamSynchronize(stream));
+        std::span<uint16_t> data = {reinterpret_cast<uint16_t *>(recv_msgs[1].data()),
+                                    recv_msgs[1].size() / 2};
+        handler.process_frame(header, data);
     }
 }
 
@@ -279,12 +336,16 @@ auto do_live(Arguments &args) -> void {
                              args.zmq_port,
                              args.zmq_port + args.zmq_listeners - 1),
                  style::url));
+    // Now we know how many workers, we can construct the global barrier
+    // worker_sync = std::make_unique<std::barrier<>>(args.zmq_listeners);
+    auto barrier = std::barrier{args.zmq_listeners};
     {
         std::vector<std::jthread> threads;
         for (uint16_t port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
              ++port) {
             threads.emplace_back(zmq_listen,
                                  global_stop.get_token(),
+                                 std::ref(barrier),
                                  args,
                                  std::cref(gains),
                                  std::cref(pedestals),
@@ -292,7 +353,8 @@ auto do_live(Arguments &args) -> void {
         }
         while (true) {
             while (threads_waiting == args.zmq_listeners) {
-                wait_spinner("All listeners waiting");
+                spinner("All listeners waiting");
+                std::this_thread::sleep_for(80ms);
             }
         }
     }
