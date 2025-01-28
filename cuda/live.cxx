@@ -282,33 +282,61 @@ auto zmq_listen(std::stop_token stop,
     DataStreamHandler handler(args, port, stream, gains, pedestals);
 
     while (!stop.stop_requested()) {
-        std::vector<zmq::message_t> recv_msgs;
         // Wait for the next message. Count waiting so we know when we are idle.
-        ++threads_waiting;
-        const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
-        --threads_waiting;
-        assert(ret);
-        print("{}: {}", port, recv_msgs[0].to_string_view());
-        auto header =
-            json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
-        if (ret == 1 && header.bitmode == 0) {
-            handler.end_acquisition();
-            continue;
-        } else if (ret != 2) {
-            print(style::error,
-                  "{}: Error: Got unexpected multipart message length {}\n",
-                  port,
-                  ret);
-            continue;
+        sync_barrier.arrive_and_wait();
+        // Between acquisitions we wait as long as it takes
+        sub.set(zmq::sockopt::rcvtimeo, -1);
+        // Loop over images within an acquisition
+        while (!stop.stop_requested()) {
+            std::vector<zmq::message_t> recv_msgs;
+            ++threads_waiting;
+            const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
+            --threads_waiting;
+            // All subsequent waits on this series of images can timeout
+            sub.set(zmq::sockopt::rcvtimeo, static_cast<int>(args.zmq_timeout));
+
+            if (!ret) {
+                // If here, then we had a timeout waiting for images.
+                print(style::error,
+                      "{}: HMI={} Error: Timeout waiting for more images/end "
+                      "notification\n",
+                      port,
+                      handler.known_hmi.value());
+                break;
+            }
+            print("{}: {}", port, recv_msgs[0].to_string_view());
+            auto header =
+                json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
+            if (ret == 1 && header.bitmode == 0) {
+                print("{}: Received end packet\n", port);
+                break;
+            } else if (ret > 2) {
+                print(style::error,
+                      "{}: Error: Got unexpected multipart message length {}\n{}",
+                      port,
+                      ret.value(),
+                      recv_msgs[0].to_string_view());
+                continue;
+            }
+
+            // We have a standard image packet
+            // Validate the header, and skip this image if invalid
+            if (!handler.validate_header(header)) {
+                continue;
+            }
+            std::span<uint16_t> data = {
+                reinterpret_cast<uint16_t *>(recv_msgs[1].data()),
+                recv_msgs[1].size() / 2};
+            handler.process_frame(header, data);
         }
-        // We have a standard image packet
-        // Validate the header, and skip this image if invalid
-        if (!handler.validate_header(header)) {
-            continue;
+        handler.end_acquisition();
+        // Now, wait until all frames have completed
+        sync_barrier.arrive_and_wait();
+        // If we are the first port...
+        if (port == args.zmq_port) {
+            print("Acquisition {} complete\n", acquisition_number);
+            ++acquisition_number;
         }
-        std::span<uint16_t> data = {reinterpret_cast<uint16_t *>(recv_msgs[1].data()),
-                                    recv_msgs[1].size() / 2};
-        handler.process_frame(header, data);
     }
 }
 

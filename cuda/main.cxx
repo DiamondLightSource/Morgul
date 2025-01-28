@@ -31,11 +31,19 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
             "The first port to listen to. Automatically incremented by 1 for each "
             "listener.")
         .default_value(static_cast<decltype(Arguments::zmq_port)>(30001))
-        .store_into(args.zmq_port);
+        .store_into(args.zmq_port)
+        .metavar("NUM");
     live_parser.add_argument("--zmq-host")
         .help("The ZMQ host to connect to")
         .default_value(std::string{"0.0.0.0"})
         .store_into(args.zmq_host);
+    live_parser.add_argument("--zmq-timeout")
+        .help(
+            "The time (in milliseconds) to wait for more frames in the current "
+            "acquisition before giving up. 0 means wait forever.")
+        .default_value(static_cast<decltype(args.zmq_timeout)>(10000))
+        .store_into(args.zmq_timeout)
+        .metavar("MS");
 
     parser.add_subparser(live_parser);
 

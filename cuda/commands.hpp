@@ -16,6 +16,7 @@ struct Arguments {
     std::string zmq_host;
     uint16_t zmq_port;
     uint16_t zmq_listeners;
+    uint16_t zmq_timeout;
 };
 
 auto do_correct(Arguments &args) -> void;
