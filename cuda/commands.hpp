@@ -16,7 +16,6 @@ struct Arguments {
     std::string zmq_host;
     uint16_t zmq_port;
     uint16_t zmq_listeners;
-    double energy;
 };
 
 auto do_correct(Arguments &args) -> void;

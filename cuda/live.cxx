@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <iterator>
 #include <nlohmann/json.hpp>
@@ -64,6 +65,11 @@ void wait_spinner(const std::string_view &message) {
     std::cout << std::flush;
 }
 
+struct DLSHeaderAdditions {
+    bool pedestal = false;
+    std::optional<double> energy;
+};
+
 class SLSHeader {
   public:
     uint32_t jsonversion;
@@ -94,7 +100,19 @@ class SLSHeader {
     uint32_t flipRows;
     uint32_t quad;
     std::optional<json> addJsonHeader;
+    /// DLS-specific additional headers that may be present in addJsonHeader
+    DLSHeaderAdditions dls;
 };
+void from_json(const json &j, DLSHeaderAdditions &d) {
+    if (j.contains("pedestal")) {
+        j.at("pedestal").get_to(d.pedestal);
+    }
+    if (j.contains("energy")) {
+        auto value = j.at("energy").template get<std::string>();
+        d.energy = std::strtod(value.c_str(), nullptr);
+    }
+}
+
 void from_json(const json &j, SLSHeader &h) {
     j.at("jsonversion").get_to(h.jsonversion);
     j.at("bitmode").get_to(h.bitmode);
@@ -127,6 +145,7 @@ void from_json(const json &j, SLSHeader &h) {
     j.at("shape")[1].get_to(h.shape[1]);
     if (j.contains("addJsonHeader")) {
         h.addJsonHeader = j.at("addJsonHeader");
+        h.dls = j["addJsonHeader"].template get<DLSHeaderAdditions>();
     }
 }
 
@@ -219,12 +238,19 @@ auto zmq_listen(std::stop_token stop,
         ++num_images_seen;
         highest_image_seen =
             std::max(highest_image_seen, {static_cast<int>(header.frameIndex + 1)});
+        if (!header.dls.energy) {
+            print(
+                style::warning,
+                "Warning: Did not get energy in addJsonHeader packet, assuming 12.4 Å");
+            header.dls.energy = {12.4};
+        }
+        print("Got Energy: {}\n", header.dls.energy);
         // send it to the GPU for processing
         call_jungfrau_image_corrections(stream,
                                         gains.get_gpu_ptrs(hmi),
                                         pedestals.get_gpu_ptrs(hmi),
                                         static_cast<uint16_t *>(recv_msgs[1].data()),
-                                        0);
+                                        header.dls.energy.value());
         CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 }
