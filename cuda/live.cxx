@@ -183,7 +183,6 @@ class DataStreamHandler {
         is_first_validation_this_acquisition.store(true);
         // Work out the maximum size the compressed data can be, add 12 for the HDF5 header
         size_t compress_size = LZ4_compressBound(2 * HM_HEIGHT * HM_WIDTH) + 12;
-        print("Largest output compression size: {:.2f} KB\n", compress_size / 1024.0f);
         compression_buffer = std::make_unique<std::byte[]>(compress_size);
     }
 
