@@ -79,6 +79,7 @@ target_link_libraries(
     fmt
     hdf5::hdf5
     lodepng
+    LZ4::LZ4
     nlohmann_json::nlohmann_json
     zeus::expected
 )

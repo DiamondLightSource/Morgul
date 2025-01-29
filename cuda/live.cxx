@@ -23,6 +23,7 @@
 #include "cuda_common.hpp"
 #include "hdf5_tools.hpp"
 #include "kernels.h"
+#include "lz4.h"
 
 using namespace fmt;
 using json = nlohmann::json;
@@ -180,6 +181,10 @@ class DataStreamHandler {
           pedestals(pedestals),
           send(send_socket) {
         is_first_validation_this_acquisition.store(true);
+        // Work out the maximum size the compressed data can be, add 12 for the HDF5 header
+        size_t compress_size = LZ4_compressBound(2 * HM_HEIGHT * HM_WIDTH) + 12;
+        print("Largest output compression size: {:.2f} KB\n", compress_size / 1024.0f);
+        compression_buffer = std::make_unique<std::byte[]>(compress_size);
     }
 
     auto validate_header(const SLSHeader &header) -> bool;
@@ -193,8 +198,9 @@ class DataStreamHandler {
     const GainData &gains;
     const PedestalData &pedestals;
     zmq::socket_t &send;
-    std::unique_ptr<uint16_t[]> output_buffer =
+    std::unique_ptr<uint16_t[]> corrected_buffer =
         std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
+    std::unique_ptr<std::byte[]> compression_buffer;
 };
 
 auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
@@ -262,9 +268,39 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                     gains.get_gpu_ptrs(known_hmi.value()),
                                     pedestals.get_gpu_ptrs(known_hmi.value()),
                                     frame.data(),
-                                    output_buffer.get(),
+                                    corrected_buffer.get(),
                                     energy);
     CUDA_CHECK(cudaStreamSynchronize(stream));
+
+    // Construct the HDF5 header so that we can do direct chunk write
+    // on the other end of the pipe
+    // first 12 bytes are uint64_t BE array size and uint32_t BE block size
+    // these are the precomputed values
+    uint64_t &uncompress_size = *reinterpret_cast<uint64_t *>(compression_buffer.get());
+    uint32_t &block_size = *reinterpret_cast<uint32_t *>(compression_buffer.get() + 8);
+    // unsigned long long *alias64 = (unsigned long long *)scratch;
+
+    uncompress_size = __builtin_bswap64(2 * 256 * 1024);
+    block_size = __builtin_bswap32(8192);
+
+    auto size = bshuf_compress_lz4(corrected_buffer.get(),
+                                   compression_buffer.get() + 12,
+                                   HM_HEIGHT * HM_WIDTH,
+                                   2,
+                                   4096);
+
+    zmq::multipart_t send_msgs;
+    // Form the multipart message to match Graeme's implementation
+    // Header, if we wanted to send more information
+    // json out_header;
+    // out_header["frameIndex"] = header.frameIndex;
+    // out_header["hmi"] = known_hmi.value();
+    // send_msgs.push_back(zmq::message_t(out_header.dump()));
+    std::vector<int> send_hdr = {header.frameIndex};
+    send_msgs.push_back(zmq::message_t(send_hdr));
+
+    send_msgs.push_back(zmq::message_t(compression_buffer.get(), size + 12));
+    zmq::send_multipart(send, send_msgs);
 }
 
 auto DataStreamHandler::end_acquisition() -> void {
