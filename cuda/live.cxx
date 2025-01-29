@@ -258,6 +258,13 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     ++num_images_seen;
     highest_image_seen =
         std::max(highest_image_seen, {static_cast<int>(header.frameIndex + 1)});
+    if (hm_frameNumber != 0 && header.frameNumber > hm_frameNumber + 1) {
+        auto num_skipped = header.frameNumber - hm_frameNumber - 1;
+        print(style::warning,
+              "hm {}: Warning: Skipped {} frames\n",
+              known_hmi.value(),
+              num_skipped);
+    }
     return true;
 }
 
