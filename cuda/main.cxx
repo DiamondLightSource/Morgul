@@ -48,7 +48,7 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .help(
             "The ZMQ base port to send corrected data onwards, one per listener. Binds "
             "to tcp://0.0.0.0/ as a PUSH socket.")
-        .default_value(static_value<decltype(Arguments::zmq_send_port)>(31001))
+        .default_value(static_cast<decltype(Arguments::zmq_send_port)>(31001))
         .store_into(args.zmq_send_port)
         .metavar("NUM");
 
