@@ -176,8 +176,7 @@ class DataStreamHandler {
     }
 
     auto validate_header(const SLSHeader &header) -> bool;
-    auto process_frame(const SLSHeader &header, const std::span<uint16_t> &frame)
-        -> void;
+    auto process_frame(const SLSHeader &header, std::span<uint16_t> &frame) -> void;
     auto end_acquisition() -> void;
 
   private:
@@ -247,10 +246,8 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
 }
 
 auto DataStreamHandler::process_frame(const SLSHeader &header,
-                                      const std::span<uint16_t> &frame) -> void {
+                                      std::span<uint16_t> &frame) -> void {
     auto energy = header.dls.energy.value_or(12.4);
-    // print("Got Energy: {} -> {}\n", header.dls.energy, energy);
-    // send it to the GPU for processing
     call_jungfrau_image_corrections(stream,
                                     gains.get_gpu_ptrs(known_hmi.value()),
                                     pedestals.get_gpu_ptrs(known_hmi.value()),
