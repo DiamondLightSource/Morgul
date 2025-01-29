@@ -303,7 +303,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     // out_header["frameIndex"] = header.frameIndex;
     // out_header["hmi"] = known_hmi.value();
     // send_msgs.push_back(zmq::message_t(out_header.dump()));
-    std::vector<int> send_hdr = {header.frameIndex};
+    std::vector<int> send_hdr = {static_cast<int>(header.frameIndex)};
     send_msgs.push_back(zmq::message_t(send_hdr));
 
     send_msgs.push_back(zmq::message_t(compression_buffer.get(), size + 12));
