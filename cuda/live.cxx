@@ -15,6 +15,7 @@
 #include <zmq.hpp>
 #include <zmq_addon.hpp>
 
+#include "bitshuffle.h"
 #include "calibration.hpp"
 #include "commands.hpp"
 #include "common.hpp"
@@ -170,8 +171,14 @@ class DataStreamHandler {
                       uint16_t port,
                       const CudaStream &stream,
                       const GainData &gains,
-                      const PedestalData &pedestals)
-        : _args(args), _port(port), stream(stream), gains(gains), pedestals(pedestals) {
+                      const PedestalData &pedestals,
+                      zmq::socket_t &send_socket)
+        : _args(args),
+          _port(port),
+          stream(stream),
+          gains(gains),
+          pedestals(pedestals),
+          send(send_socket) {
         is_first_validation_this_acquisition.store(true);
     }
 
@@ -185,6 +192,9 @@ class DataStreamHandler {
     const CudaStream &stream;
     const GainData &gains;
     const PedestalData &pedestals;
+    zmq::socket_t &send;
+    std::unique_ptr<uint16_t[]> output_buffer =
+        std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
 };
 
 auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
@@ -252,6 +262,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                     gains.get_gpu_ptrs(known_hmi.value()),
                                     pedestals.get_gpu_ptrs(known_hmi.value()),
                                     frame.data(),
+                                    output_buffer.get(),
                                     energy);
     CUDA_CHECK(cudaStreamSynchronize(stream));
 }
@@ -285,7 +296,9 @@ auto zmq_listen(std::stop_token stop,
         fmt::format("tcp://0.0.0.0:{}", port - args.zmq_port + args.zmq_send_port));
 
     CudaStream stream;
-    DataStreamHandler handler(args, port, stream, gains, pedestals);
+    DataStreamHandler handler(args, port, stream, gains, pedestals, send);
+
+    auto output_data = std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
 
     while (!stop.stop_requested()) {
         // Wait for the next message. Count waiting so we know when we are idle.

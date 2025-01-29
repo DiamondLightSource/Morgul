@@ -72,6 +72,8 @@ target_link_libraries(
     morgul-cuda
     PRIVATE
     argparse
+    Bitshuffle::bitshuffle
+    cppzmq
     CUDA::cudart
     date::date
     fmt
@@ -79,7 +81,6 @@ target_link_libraries(
     lodepng
     nlohmann_json::nlohmann_json
     zeus::expected
-    cppzmq
 )
 target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(morgul-cuda PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>")
