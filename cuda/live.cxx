@@ -271,9 +271,18 @@ auto zmq_listen(std::stop_token stop,
     // thread per GB/s of data, and we have 2 GB/s per module (e.g.
     // each IO thread can cope with one half-module).
     zmq::context_t ctx;
+
     zmq::socket_t sub{ctx, zmq::socket_type::sub};
     sub.connect(fmt::format("tcp://{}:{}", args.zmq_host, port));
     sub.set(zmq::sockopt::subscribe, "");
+
+    // Set up the results sending port. Let's reuse the context, and
+    // we can wait and see if this needs more resources.
+    zmq::socket_t send{ctx, zmq::socket_type::push};
+    send.set(zmq::sockopt::sndhwm, 50000);
+    send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
+    send.bind(
+        fmt::format("tcp://0.0.0.0:{}", port - args.zmq_port + args.zmq_send_port));
 
     CudaStream stream;
     DataStreamHandler handler(args, port, stream, gains, pedestals);
@@ -329,7 +338,7 @@ auto zmq_listen(std::stop_token stop,
         handler.end_acquisition();
         // Now, wait until all frames have completed
         sync_barrier.arrive_and_wait();
-        // If we are the first port...
+        // If we are the first port
         if (port == args.zmq_port) {
             print("Acquisition {} complete\n", acquisition_number);
             ++acquisition_number;

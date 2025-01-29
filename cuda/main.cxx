@@ -28,7 +28,7 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .store_into(args.zmq_listeners);
     live_parser.add_argument("--zmq-port")
         .help(
-            "The first port to listen to. Automatically incremented by 1 for each "
+            "The first port to connect to. Automatically incremented by 1 for each "
             "listener.")
         .default_value(static_cast<decltype(Arguments::zmq_port)>(30001))
         .store_into(args.zmq_port)
@@ -44,6 +44,13 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .default_value(static_cast<decltype(args.zmq_timeout)>(10000))
         .store_into(args.zmq_timeout)
         .metavar("MS");
+    live_parser.add_argument("--zmq-send-port")
+        .help(
+            "The ZMQ base port to send corrected data onwards, one per listener. Binds "
+            "to tcp://0.0.0.0/ as a PUSH socket.")
+        .default_value(static_value<decltype(Arguments::zmq_send_port)>(31001))
+        .store_into(args.zmq_send_port)
+        .metavar("NUM");
 
     parser.add_subparser(live_parser);
 
