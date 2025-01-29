@@ -11,8 +11,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-
-# include_directories(include)
+include(EnsureSubmodule)
 
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
@@ -58,6 +57,7 @@ find_package(HDF5 REQUIRED)
 find_package(lodepng REQUIRED)
 find_package(cppzmq REQUIRED)
 
+ensure_submodule(modules/bitshuffle)
 add_executable(
     morgul-cuda
     cuda/main.cxx
