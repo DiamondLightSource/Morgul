@@ -207,7 +207,7 @@ auto make_cuda_malloc(size_t num_items = 1) {
             fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
-    return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
+    return std::shared_ptr<T[]>{obj, deleter};
 }
 
 template <typename T>
