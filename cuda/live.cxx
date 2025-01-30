@@ -184,13 +184,37 @@ class DataStreamHandler {
         // Work out the maximum size the compressed data can be, add 12 for the HDF5 header
         size_t compress_size = LZ4_compressBound(2 * HM_HEIGHT * HM_WIDTH) + 12;
         compression_buffer = std::make_unique<std::byte[]>(compress_size);
+
+        pedestal_n =
+            make_cuda_malloc<uint16_t>(GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH);
+        pedestal_x =
+            make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH);
+        pedestal_x_sq =
+            make_cuda_malloc<uint64_t>(GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH);
+        reset_pedestal_buffers();
     }
+    ~DataStreamHandler() {}
 
     auto validate_header(const SLSHeader &header) -> bool;
     auto process_frame(const SLSHeader &header, std::span<uint16_t> &frame) -> void;
     auto end_acquisition() -> void;
 
   private:
+    void reset_pedestal_buffers() {
+        CUDA_CHECK(
+            cudaMemset(pedestal_n.get(),
+                       0,
+                       GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH * sizeof(uint16_t)));
+        CUDA_CHECK(
+            cudaMemset(pedestal_x.get(),
+                       0,
+                       GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH * sizeof(uint32_t)));
+        CUDA_CHECK(
+            cudaMemset(pedestal_x_sq.get(),
+                       0,
+                       GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH * sizeof(uint64_t)));
+    }
+
     const Arguments &_args;
     uint16_t _port;
     const CudaStream &stream;
@@ -200,6 +224,11 @@ class DataStreamHandler {
     std::unique_ptr<uint16_t[]> corrected_buffer =
         std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
     std::unique_ptr<std::byte[]> compression_buffer;
+    // Accumulation buffers for calculating pedestals on-the-fly
+    std::shared_ptr<uint16_t[]> pedestal_n;
+    std::shared_ptr<uint32_t[]> pedestal_x;
+    std::shared_ptr<uint64_t[]> pedestal_x_sq;
+    bool is_pedestal_mode = false;
 };
 
 auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
@@ -250,6 +279,28 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         if (first_acquisition) {
             print(style::warning,
                   "Warning: Did not get energy in addJsonHeader packet\n");
+        }
+    }
+
+    // Paranoia: Look for pedestal flag changing partway through stream.
+    // This is unlikely to be from the detector, but bad handling of
+    // acquisition separation in the logic of this program.
+    if ((header.dls.pedestal && !is_pedestal_mode && num_images_seen > 0)
+        || is_pedestal_mode && !header.dls.pedestal && num_images_seen > 0) {
+        print(style::error,
+              "hm {}: Error: Pedestal flag toggled midway through stream ({} "
+              "images seen)! "
+              "Ignoring data.\n",
+              known_hmi.value(),
+              num_images_seen);
+        return false;
+    }
+
+    // Handle pedestal mode
+    if (num_images_seen == 0) {
+        is_pedestal_mode = header.dls.pedestal;
+        if (first_acquisition) {
+            print("Starting pedestal measurement run\n");
         }
     }
 
