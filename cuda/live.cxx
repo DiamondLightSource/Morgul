@@ -311,6 +311,15 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
 
 auto DataStreamHandler::end_acquisition() -> void {
     is_first_validation_this_acquisition.store(false);
+    if (num_images_seen != highest_image_seen) {
+        print(style::warning,
+              "hm{:02}: Incomplete image set, recieved {}/{} expected images\n",
+              known_hmi.value(),
+              num_images_seen,
+              highest_image_seen);
+    }
+    num_images_seen = 0;
+    highest_image_seen = 0;
 }
 
 auto zmq_listen(std::stop_token stop,
