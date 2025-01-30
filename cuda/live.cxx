@@ -352,8 +352,9 @@ auto zmq_listen(std::stop_token stop,
     auto output_data = std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
 
     while (!stop.stop_requested()) {
-        // Wait for the next message. Count waiting so we know when we are idle.
+        // Make sure all of our threads are in the same phase
         sync_barrier.arrive_and_wait();
+        // Wait for the next message. Count waiting so we know when we are idle.
         // Between acquisitions we wait as long as it takes
         sub.set(zmq::sockopt::rcvtimeo, -1);
         // Loop over images within an acquisition
