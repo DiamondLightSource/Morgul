@@ -17,8 +17,11 @@ using Detector = std::string;
 constexpr static std::tuple<uint16_t, uint16_t> MODULE_SHAPE{1024, 512};
 constexpr static std::tuple<uint16_t, uint16_t> HALF_MODULE_SHAPE{1024, 256};
 
-constexpr static uint16_t HM_WIDTH = std::get<0>(HALF_MODULE_SHAPE);
-constexpr static uint16_t HM_HEIGHT = std::get<1>(HALF_MODULE_SHAPE);
+constexpr static uint32_t HM_WIDTH = std::get<0>(HALF_MODULE_SHAPE);
+constexpr static uint32_t HM_HEIGHT = std::get<1>(HALF_MODULE_SHAPE);
+constexpr static uint32_t HM_PIXELS = HM_WIDTH * HM_HEIGHT;
+
+using pixel_t = uint16_t;
 
 #ifndef OLD_CUDA
 constexpr static Detector JF1M{"JF1M"};

@@ -200,6 +200,8 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
+    static_assert(std::is_same<T, Tb>::value,
+                  "Do not pass extents to make_cuda_malloc");
     Tb *obj = nullptr;
     auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
@@ -207,7 +209,7 @@ auto make_cuda_malloc(size_t num_items = 1) {
             fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
-    return std::shared_ptr<T[]>{obj, deleter};
+    return std::shared_ptr<Tb[]>(obj, deleter);
 }
 
 template <typename T>

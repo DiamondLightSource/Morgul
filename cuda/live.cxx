@@ -112,7 +112,25 @@ class SLSHeader {
 };
 void from_json(const json &j, DLSHeaderAdditions &d) {
     if (j.contains("pedestal")) {
-        j.at("pedestal").get_to(d.pedestal);
+        if (j["pedestal"].is_string()) {
+            if (j["pedestal"].template get<std::string>() == "true") {
+                d.pedestal = true;
+            } else if (j["pedestal"].template get<std::string>() == "false") {
+                d.pedestal = false;
+            } else {
+                print(style::error,
+                      "Fatal Error: Unexpected string value for pedestal flag: {}\n",
+                      j["pedestal"].dump());
+                std::exit(1);
+            }
+        } else if (j["pedestal"].is_boolean()) {
+            j.at("pedestal").get_to(d.pedestal);
+        } else {
+            print(style::error,
+                  "Fatal Error: Got pedestal mode flag but unexpected contents: '{}'\n",
+                  j["pedestal"].dump());
+            std::exit(1);
+        }
     }
     if (j.contains("energy")) {
         auto value = j.at("energy").template get<std::string>();
@@ -163,8 +181,8 @@ class DataStreamHandler {
 
     // Keep track of how many images we have seen/the highest index.
     // since the last end-packet.
-    int num_images_seen = 0;
-    int highest_image_seen = 0;
+    size_t num_images_seen = 0;
+    size_t highest_image_seen = 0;
     // Keep track of the last frame number seen, so we know if a frame was skipped
     uint64_t hm_frameNumber = 0;
 
@@ -182,15 +200,12 @@ class DataStreamHandler {
           send(send_socket) {
         is_first_validation_this_acquisition.store(true);
         // Work out the maximum size the compressed data can be, add 12 for the HDF5 header
-        size_t compress_size = LZ4_compressBound(2 * HM_HEIGHT * HM_WIDTH) + 12;
+        size_t compress_size = LZ4_compressBound(sizeof(pixel_t) * HM_PIXELS) + 12;
         compression_buffer = std::make_unique<std::byte[]>(compress_size);
 
-        pedestal_n =
-            make_cuda_malloc<uint16_t>(GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH);
-        pedestal_x =
-            make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH);
-        pedestal_x_sq =
-            make_cuda_malloc<uint64_t>(GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH);
+        pedestal_n = make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_PIXELS);
+        pedestal_x = make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_PIXELS);
+        pedestal_x_sq = make_cuda_malloc<uint64_t>(GAIN_MODES.size() * HM_PIXELS);
         reset_pedestal_buffers();
     }
     ~DataStreamHandler() {}
@@ -201,18 +216,12 @@ class DataStreamHandler {
 
   private:
     void reset_pedestal_buffers() {
-        CUDA_CHECK(
-            cudaMemset(pedestal_n.get(),
-                       0,
-                       GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH * sizeof(uint16_t)));
-        CUDA_CHECK(
-            cudaMemset(pedestal_x.get(),
-                       0,
-                       GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH * sizeof(uint32_t)));
-        CUDA_CHECK(
-            cudaMemset(pedestal_x_sq.get(),
-                       0,
-                       GAIN_MODES.size() * HM_HEIGHT * HM_WIDTH * sizeof(uint64_t)));
+        CUDA_CHECK(cudaMemset(
+            pedestal_n.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));
+        CUDA_CHECK(cudaMemset(
+            pedestal_x.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));
+        CUDA_CHECK(cudaMemset(
+            pedestal_x_sq.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint64_t)));
     }
 
     const Arguments &_args;
@@ -221,11 +230,13 @@ class DataStreamHandler {
     const GainData &gains;
     const PedestalData &pedestals;
     zmq::socket_t &send;
-    std::unique_ptr<uint16_t[]> corrected_buffer =
-        std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
+    std::unique_ptr<pixel_t[]> corrected_buffer =
+        std::make_unique<pixel_t[]>(HM_PIXELS);
     std::unique_ptr<std::byte[]> compression_buffer;
     // Accumulation buffers for calculating pedestals on-the-fly
-    std::shared_ptr<uint16_t[]> pedestal_n;
+    // Note: Because the value is max. 14-bit, we have worst-case 18-bits
+    // of count before 32-bit saturation, so n is 32-bit to cover this.
+    std::shared_ptr<uint32_t[]> pedestal_n;
     std::shared_ptr<uint32_t[]> pedestal_x;
     std::shared_ptr<uint64_t[]> pedestal_x_sq;
     bool is_pedestal_mode = false;
@@ -238,7 +249,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         is_first_validation_this_acquisition.compare_exchange_strong(_expected, false);
 
     // Validate this matches our expectations
-    if (header.shape != std::array{1024u, 256u}) {
+    if (header.shape != std::array{HM_WIDTH, HM_HEIGHT}) {
         if (first_acquisition) {
             print(style::error,
                   "{}: Error: Got wrong sized image ({}), expected (1024,256)",
@@ -247,20 +258,20 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         }
         return false;
     }
-    uint32_t det_x = std::get<0>(DETECTOR_SIZE.at(_args.detector));
-    uint32_t det_y = std::get<1>(DETECTOR_SIZE.at(_args.detector)) * 2;
-    if (header.detshape != std::array{det_x, det_y}) {
+    uint32_t det_w = std::get<0>(DETECTOR_SIZE.at(_args.detector));
+    uint32_t det_h = std::get<1>(DETECTOR_SIZE.at(_args.detector)) * 2;
+    if (header.detshape != std::array{det_w, det_h}) {
         if (first_acquisition) {
             print(style::error,
                   "{}: Error: Got wrong sized detector {}; expected {},{}",
                   _port,
                   header.detshape,
-                  det_x,
-                  det_y);
+                  det_w,
+                  det_h);
         }
         return false;
     }
-    auto hmi = header.column * det_y + header.row;
+    auto hmi = header.column * det_h + header.row;
     if (!known_hmi) {
         known_hmi = hmi;
     } else {
@@ -304,10 +315,8 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         }
     }
 
-    // If here, then we have an expected next packet
     ++num_images_seen;
-    highest_image_seen =
-        std::max(highest_image_seen, {static_cast<int>(header.frameIndex + 1)});
+    highest_image_seen = std::max(highest_image_seen, header.frameIndex + 1);
     if (hm_frameNumber != 0 && header.frameNumber > hm_frameNumber + 1) {
         auto num_skipped = header.frameNumber - hm_frameNumber - 1;
         print(style::warning,
@@ -321,14 +330,26 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
 auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       std::span<uint16_t> &frame) -> void {
     auto energy = header.dls.energy.value_or(12.4);
-    call_jungfrau_image_corrections(stream,
-                                    gains.get_gpu_ptrs(known_hmi.value()),
-                                    pedestals.get_gpu_ptrs(known_hmi.value()),
-                                    frame.data(),
-                                    corrected_buffer.get(),
-                                    energy);
-    CUDA_CHECK(cudaStreamSynchronize(stream));
 
+    uint16_t *output_buffer = nullptr;
+
+    if (is_pedestal_mode) {
+        output_buffer = frame.data();
+        call_jungfrau_pedestal_accumulate(stream,
+                                          frame.data(),
+                                          pedestal_n.get(),
+                                          pedestal_x.get(),
+                                          pedestal_x_sq.get());
+    } else {
+        output_buffer = corrected_buffer.get();
+        call_jungfrau_image_corrections(stream,
+                                        gains.get_gpu_ptrs(known_hmi.value()),
+                                        pedestals.get_gpu_ptrs(known_hmi.value()),
+                                        frame.data(),
+                                        output_buffer,
+                                        energy);
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+    }
     // Construct the HDF5 header so that we can do direct chunk write
     // on the other end of the pipe
     // first 12 bytes are uint64_t BE array size and uint32_t BE block size
