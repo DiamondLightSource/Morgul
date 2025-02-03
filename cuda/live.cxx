@@ -75,6 +75,7 @@ int spinner(const std::string_view &message) {
 struct DLSHeaderAdditions {
     bool pedestal = false;
     std::optional<double> energy;
+    bool raw = false;
 };
 
 class SLSHeader {
@@ -109,29 +110,39 @@ class SLSHeader {
     std::optional<json> addJsonHeader;
     /// DLS-specific additional headers that may be present in addJsonHeader
     DLSHeaderAdditions dls;
+    json raw_header;
 };
-void from_json(const json &j, DLSHeaderAdditions &d) {
-    if (j.contains("pedestal")) {
-        if (j["pedestal"].is_string()) {
-            if (j["pedestal"].template get<std::string>() == "true") {
-                d.pedestal = true;
-            } else if (j["pedestal"].template get<std::string>() == "false") {
-                d.pedestal = false;
-            } else {
-                print(style::error,
-                      "Fatal Error: Unexpected string value for pedestal flag: {}\n",
-                      j["pedestal"].dump());
-                std::exit(1);
-            }
-        } else if (j["pedestal"].is_boolean()) {
-            j.at("pedestal").get_to(d.pedestal);
-        } else {
-            print(style::error,
-                  "Fatal Error: Got pedestal mode flag but unexpected contents: '{}'\n",
-                  j["pedestal"].dump());
-            std::exit(1);
-        }
+
+bool read_boolish_json(const json &j, const std::string_view &name) {
+    if (!j.contains(name)) {
+        return false;
     }
+    auto v = j[name];
+    if (v.is_boolean()) {
+        return v.template get<bool>();
+    }
+    if (v.is_string()) {
+        auto value = v.template get<std::string>();
+        if (value.empty() || value == "false") {
+            return false;
+        } else if (value == "true") {
+            return true;
+        }
+        throw std::runtime_error(
+            fmt::format("Got non-boolish json value: '{}'", value));
+    }
+    if (v.empty() || v.is_null()) {
+        return false;
+    }
+    uint8_t type = (uint8_t)v.type();
+
+    throw std::runtime_error(
+        fmt::format("Cannot handle as boolish json value {}: '{}'", type, v.dump()));
+}
+
+void from_json(const json &j, DLSHeaderAdditions &d) {
+    d.pedestal = read_boolish_json(j, "pedestal");
+    d.raw = read_boolish_json(j, "raw");
     if (j.contains("energy")) {
         auto value = j.at("energy").template get<std::string>();
         d.energy = std::strtod(value.c_str(), nullptr);
@@ -172,6 +183,7 @@ void from_json(const json &j, SLSHeader &h) {
         h.addJsonHeader = j.at("addJsonHeader");
         h.dls = j["addJsonHeader"].template get<DLSHeaderAdditions>();
     }
+    h.raw_header = j;
 }
 
 class DataStreamHandler {
@@ -333,7 +345,9 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
 
     uint16_t *output_buffer = nullptr;
 
-    if (is_pedestal_mode) {
+    if (header.dls.raw) {
+        output_buffer = frame.data();
+    } else if (is_pedestal_mode) {
         output_buffer = frame.data();
         call_jungfrau_pedestal_accumulate(stream,
                                           frame.data(),
@@ -368,14 +382,15 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                    4096);
 
     zmq::multipart_t send_msgs;
-    // Form the multipart message to match Graeme's implementation
-    // Header, if we wanted to send more information
-    // json out_header;
-    // out_header["frameIndex"] = header.frameIndex;
-    // out_header["hmi"] = known_hmi.value();
-    // send_msgs.push_back(zmq::message_t(out_header.dump()));
-    std::vector<int> send_hdr = {static_cast<int>(header.frameIndex)};
-    send_msgs.push_back(zmq::message_t(send_hdr));
+    json send_header;
+    send_header["frameIndex"] = header.frameIndex;
+    send_header["row"] = header.row;
+    send_header["column"] = header.column;
+    send_header["shape"] = header.raw_header["shape"];
+    send_header["bitmode"] = header.bitmode;
+    send_header["expLength"] = header.expLength;
+    send_header["acquisition"] = acquisition_number.load();
+    send_msgs.push_back(zmq::message_t(send_header.dump()));
 
     send_msgs.push_back(zmq::message_t(compression_buffer.get(), size + 12));
     zmq::send_multipart(send, send_msgs);
