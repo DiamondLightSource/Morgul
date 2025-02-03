@@ -345,16 +345,20 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     // Handle pedestal mode
     if (num_images_seen == 0) {
         is_pedestal_mode = header.dls.pedestal;
-        if (!header.dls.pedestal_frames) {
-            print(style::error, "Error: Pedestal mode on but no pedestal_frames set\n");
-            return false;
-        }
-        if (!header.dls.pedestal_loops) {
-            print(style::error, "Error: Pedestal mode on but no pedestal_loops set\n");
-            return false;
-        }
-        if (first_acquisition) {
-            print("Starting pedestal measurement run\n");
+        if (is_pedestal_mode) {
+            if (!header.dls.pedestal_frames) {
+                print(style::error,
+                      "Error: Pedestal mode on but no pedestal_frames set\n");
+                return false;
+            }
+            if (!header.dls.pedestal_loops) {
+                print(style::error,
+                      "Error: Pedestal mode on but no pedestal_loops set\n");
+                return false;
+            }
+            if (first_acquisition) {
+                print("Starting pedestal measurement run\n");
+            }
         }
     }
 
@@ -433,7 +437,6 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["expLength"] = header.expLength;
     send_header["acquisition"] = acquisition_number.load();
     send_msgs.push_back(zmq::message_t(send_header.dump()));
-
     send_msgs.push_back(zmq::message_t(compression_buffer.get(), size + 12));
     zmq::send_multipart(send, send_msgs);
 }
@@ -451,6 +454,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     }
     num_images_seen = 0;
     highest_image_seen = 0;
+    is_pedestal_mode = false;
 }
 
 #pragma region Main Loop
