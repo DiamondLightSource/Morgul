@@ -375,7 +375,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       std::span<uint16_t> &frame) -> void {
     auto energy = header.dls.energy.value_or(12.4);
 
-    uint16_t *output_buffer = nullptr;
+    pixel_t *output_buffer = nullptr;
 
     if (header.dls.raw) {
         output_buffer = frame.data();
@@ -416,16 +416,12 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     // these are the precomputed values
     uint64_t &uncompress_size = *reinterpret_cast<uint64_t *>(compression_buffer.get());
     uint32_t &block_size = *reinterpret_cast<uint32_t *>(compression_buffer.get() + 8);
-    // unsigned long long *alias64 = (unsigned long long *)scratch;
-
     uncompress_size = __builtin_bswap64(2 * 256 * 1024);
     block_size = __builtin_bswap32(8192);
 
-    auto size = bshuf_compress_lz4(corrected_buffer.get(),
-                                   compression_buffer.get() + 12,
-                                   HM_HEIGHT * HM_WIDTH,
-                                   2,
-                                   4096);
+    auto size = bshuf_compress_lz4(
+        output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
+    print("Size = {}\n", size);
 
     zmq::multipart_t send_msgs;
     json send_header;
