@@ -14,4 +14,11 @@ void call_jungfrau_pedestal_accumulate(cudaStream_t stream,
                                        const uint16_t *halfmodule_data,
                                        uint32_t *pedestals_n,
                                        uint32_t *pedestals_x,
-                                       uint64_t *pedestals_x_sq);
+                                       uint64_t *pedestals_x_sq,
+                                       int expected_gain_mode);
+
+void call_jungfrau_pedestal_finalize(cudaStream_t stream,
+                                     const uint32_t *pedestals_n,
+                                     const uint32_t *pedestals_x,
+                                     float *pedestals,
+                                     bool *pedestals_mask);

@@ -371,11 +371,15 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
         output_buffer = frame.data();
     } else if (is_pedestal_mode) {
         output_buffer = frame.data();
+        // Work out what we expect the gain mode to be
+        int gain_mode = 0;
+        print(style::warning, "Warning: Not reading gain mode properly\n");
         call_jungfrau_pedestal_accumulate(stream,
                                           frame.data(),
                                           pedestal_n.get(),
                                           pedestal_x.get(),
-                                          pedestal_x_sq.get());
+                                          pedestal_x_sq.get(),
+                                          gain_mode);
     } else {
         output_buffer = corrected_buffer.get();
         call_jungfrau_image_corrections(stream,
