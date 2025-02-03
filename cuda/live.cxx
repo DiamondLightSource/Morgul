@@ -452,6 +452,23 @@ auto DataStreamHandler::end_acquisition() -> void {
               num_images_seen,
               highest_image_seen);
     }
+
+    if (is_pedestal_mode) {
+        std::vector<std::byte> pedestal_mask{HM_PIXELS};
+
+        // std::vector<float> pedestals{HM_PIXELS * GAIN_MODES.size()};
+        auto pedestals = make_cuda_malloc<float>(HM_PIXELS * GAIN_MODES.size());
+        // auto pedestal_mask = make_cuda_malloc<bool>(HM_PIXELS);
+        print("Mask vector size: {}\n", pedestal_mask.size());
+        // print("Vector size:      {}\n", pedestals.size());
+
+        call_jungfrau_pedestal_finalize(stream,
+                                        pedestal_n.get(),
+                                        pedestal_x.get(),
+                                        pedestals.get(),
+                                        reinterpret_cast<bool *>(pedestal_mask.data()));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+    }
     num_images_seen = 0;
     highest_image_seen = 0;
     is_pedestal_mode = false;
