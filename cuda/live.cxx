@@ -91,11 +91,13 @@ class SLSHeader {
     std::array<uint32_t, 2> shape;
     uint32_t size;
     size_t acqIndex;
+    /// Index of this frame in the current acquisition e.g. 0....N-1
     size_t frameIndex;
     double progress;
     std::string fname;
     uint32_t data;
     uint32_t completeImage;
+    /// The number of frames since the detector count was reset - NOT frame index
     size_t frameNumber;
     uint32_t expLength;
     uint32_t packetNumber;
@@ -343,6 +345,14 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     // Handle pedestal mode
     if (num_images_seen == 0) {
         is_pedestal_mode = header.dls.pedestal;
+        if (!header.dls.pedestal_frames) {
+            print(style::error, "Error: Pedestal mode on but no pedestal_frames set\n");
+            return false;
+        }
+        if (!header.dls.pedestal_loops) {
+            print(style::error, "Error: Pedestal mode on but no pedestal_loops set\n");
+            return false;
+        }
         if (first_acquisition) {
             print("Starting pedestal measurement run\n");
         }
@@ -371,9 +381,19 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
         output_buffer = frame.data();
     } else if (is_pedestal_mode) {
         output_buffer = frame.data();
-        // Work out what we expect the gain mode to be
-        int gain_mode = 0;
-        print(style::warning, "Warning: Not reading gain mode properly\n");
+        // Work out what we expect the gain mode to be for this frame.
+        // We don't want to count pixels in frames that aren't what they
+        // are supposed to be forced to.
+        const auto ploops = header.dls.pedestal_loops.value();
+        const auto pframes = header.dls.pedestal_frames.value();
+
+        int gain_mode = header.frameIndex >= ploops * pframes ? 2 : 1;
+
+        if (header.frameIndex % (pframes - 1) != 0) {
+            // Only the Nframes-1-indexed images have the gain mode forced.
+            gain_mode = 0;
+        }
+
         call_jungfrau_pedestal_accumulate(stream,
                                           frame.data(),
                                           pedestal_n.get(),
