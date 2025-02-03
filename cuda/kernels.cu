@@ -48,8 +48,6 @@ __global__ void jungfrau_pedestal_accumulate(const uint16_t *halfmodule_data,
         pedestals_n[gain_offset] += 1;
         pedestals_x[gain_offset] += value;
         pedestals_x_sq[gain_offset] += value * value;
-    } else {
-        printf("Error: Gain mode mismatch %d != %d\n", gain_mode, expected_gain_mode);
     }
 }
 
