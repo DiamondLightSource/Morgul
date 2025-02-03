@@ -425,7 +425,6 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
 
     auto size = bshuf_compress_lz4(
         output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
-    print("Size = {}\n", size);
 
     zmq::multipart_t send_msgs;
     json send_header;
