@@ -72,6 +72,8 @@ int spinner(const std::string_view &message) {
     return msg.size();
 }
 
+#pragma region Header Parsing
+
 struct DLSHeaderAdditions {
     bool pedestal = false;
     std::optional<double> energy;
@@ -185,7 +187,9 @@ void from_json(const json &j, SLSHeader &h) {
     }
     h.raw_header = j;
 }
+#pragma endregion
 
+#pragma region Handler Class
 class DataStreamHandler {
   public:
     // Once we receive an HMI, we must always receive the same one
@@ -253,6 +257,8 @@ class DataStreamHandler {
     std::shared_ptr<uint64_t[]> pedestal_x_sq;
     bool is_pedestal_mode = false;
 };
+
+#pragma region Validate Header
 
 auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     // Once per acquisition, the first thread through gets this flag
@@ -339,6 +345,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     return true;
 }
 
+#pragma region Process Frame
 auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       std::span<uint16_t> &frame) -> void {
     auto energy = header.dls.energy.value_or(12.4);
@@ -396,6 +403,8 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     zmq::send_multipart(send, send_msgs);
 }
 
+#pragma region End Acquisition
+
 auto DataStreamHandler::end_acquisition() -> void {
     is_first_validation_this_acquisition.store(false);
     if (num_images_seen != highest_image_seen) {
@@ -408,6 +417,8 @@ auto DataStreamHandler::end_acquisition() -> void {
     num_images_seen = 0;
     highest_image_seen = 0;
 }
+
+#pragma region Main Loop
 
 auto zmq_listen(std::stop_token stop,
                 std::barrier<> &sync_barrier,
@@ -497,6 +508,8 @@ auto zmq_listen(std::stop_token stop,
         }
     }
 }
+
+#pragma region Launcher
 
 auto do_live(Arguments &args) -> void {
     print(
