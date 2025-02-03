@@ -47,9 +47,23 @@ __global__ void jungfrau_pedestal_accumulate(const uint16_t *halfmodule_data,
     }
 }
 
-// __global__ void jungfrau_pedestal_finalize(
+__global__ void jungfrau_pedestal_finalize(const uint32_t *pedestals_n,
+                                           const uint32_t *pedestals_x,
+                                           float *pedestals,
+                                           bool *pedestals_mask) {
+    int x = threadIdx.x + blockIdx.x * blockDim.x;
+    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    int index = y * HM_WIDTH + x;
+    float sum_x = pedestals_x[index];
 
-//     )
+    pedestals[index] = sum_x / static_cast<float>(pedestals_n[index]);
+    // Set the mask if any gain is zero. This is safe to clobber because
+    // it is only ever setting "true".
+    if (pedestals_n[index] == 0) {
+        pedestals_mask[index % HM_HEIGHT] = true;
+    }
+}
+
 void call_jungfrau_image_corrections(cudaStream_t stream,
                                      GainData::GainModePointers gains,
                                      PedestalData::GainModePointers pedestals,
