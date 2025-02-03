@@ -78,6 +78,8 @@ struct DLSHeaderAdditions {
     bool pedestal = false;
     std::optional<double> energy;
     bool raw = false;
+    std::optional<size_t> pedestal_frames;
+    std::optional<size_t> pedestal_loops;
 };
 
 class SLSHeader {
@@ -141,6 +143,13 @@ bool read_boolish_json(const json &j, const std::string_view &name) {
     throw std::runtime_error(
         fmt::format("Cannot handle as boolish json value {}: '{}'", type, v.dump()));
 }
+template <typename T>
+auto read_json_number(const json &j) {
+    if (j.is_string()) {
+        return static_cast<T>(std::stoi(j.template get<std::string>()));
+    }
+    return j.template get<T>();
+}
 
 void from_json(const json &j, DLSHeaderAdditions &d) {
     d.pedestal = read_boolish_json(j, "pedestal");
@@ -148,6 +157,12 @@ void from_json(const json &j, DLSHeaderAdditions &d) {
     if (j.contains("energy")) {
         auto value = j.at("energy").template get<std::string>();
         d.energy = std::strtod(value.c_str(), nullptr);
+    }
+    if (j.contains("pedestal_frames")) {
+        d.pedestal_frames = {read_json_number<size_t>(j["pedestal_frames"])};
+    }
+    if (j.contains("pedestal_loops")) {
+        d.pedestal_loops = {read_json_number<size_t>(j["pedestal_loops"])};
     }
 }
 
