@@ -80,6 +80,7 @@ int spinner(const std::string_view &message) {
 
 struct DLSHeaderAdditions {
     bool pedestal = false;
+    /// @brief Photon Energy (KeV)
     std::optional<double> energy;
     bool raw = false;
     std::optional<size_t> pedestal_frames;
@@ -160,9 +161,11 @@ auto read_json_number(const json &j) {
 void from_json(const json &j, DLSHeaderAdditions &d) {
     d.pedestal = read_boolish_json(j, "pedestal");
     d.raw = read_boolish_json(j, "raw");
-    if (j.contains("energy")) {
-        auto value = j.at("energy").template get<std::string>();
-        d.energy = std::strtod(value.c_str(), nullptr);
+    if (j.contains("wavelength")) {
+        auto value = j.at("wavelength").template get<std::string>();
+        double wavelength_angstrom = std::strtod(value.c_str(), nullptr) / 10;
+        double energy_kev = 1.239841984055037e-09 / wavelength_angstrom;
+        d.energy = energy_kev;
     }
     if (j.contains("pedestal_frames")) {
         d.pedestal_frames = {read_json_number<size_t>(j["pedestal_frames"])};
