@@ -277,6 +277,7 @@ class DataStreamHandler {
     size_t highest_image_seen = 0;
     // Keep track of the last frame number seen, so we know if a frame was skipped
     uint64_t hm_frameNumber = 0;
+    uint64_t exposure_ns = 0;
 
     DataStreamHandler(const Arguments &args,
                       uint16_t port,
@@ -365,6 +366,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         }
         return false;
     }
+    // Handle knowing which module we handle
     auto hmi = header.column * det_h + header.row;
     if (!known_hmi) {
         known_hmi = hmi;
@@ -401,8 +403,10 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         return false;
     }
 
-    // Handle pedestal mode
+    // Handle Setting data on first image in an acquisition
     if (num_images_seen == 0) {
+        exposure_ns = header.expLength * 100;
+
         is_pedestal_mode = header.dls.pedestal;
         if (is_pedestal_mode) {
             if (!header.dls.pedestal_frames) {
@@ -530,6 +534,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     num_images_seen = 0;
     highest_image_seen = 0;
     is_pedestal_mode = false;
+    exposure_ns = 0;
 }
 
 #pragma region Main Loop
