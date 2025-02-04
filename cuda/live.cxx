@@ -469,12 +469,13 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                           gain_mode);
     } else {
         output_buffer = corrected_buffer.get();
-        call_jungfrau_image_corrections(stream,
-                                        gains.get_gpu_ptrs(known_hmi.value()),
-                                        pedestals.get_gpu_ptrs(known_hmi.value()),
-                                        frame.data(),
-                                        output_buffer,
-                                        energy);
+        call_jungfrau_image_corrections(
+            stream,
+            gains.get_gpu_ptrs(known_hmi.value()),
+            pedestals.get_gpu_ptrs(exposure_ns, known_hmi.value()),
+            frame.data(),
+            output_buffer,
+            energy);
         CUDA_CHECK(cudaStreamSynchronize(stream));
     }
     // Construct the HDF5 header so that we can do direct chunk write

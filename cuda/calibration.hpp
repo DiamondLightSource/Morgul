@@ -26,7 +26,7 @@ enum class ModuleMode {
 auto module_mode_from(std::string_view value) -> ModuleMode;
 
 class PedestalData {
-    typedef double pedestal_t;
+    typedef float pedestal_t;
 
   public:
     using GainModePointers = std::array<pedestal_t*, GAIN_MODES.size()>;
