@@ -269,7 +269,9 @@ class PedestalsLibrary {
         {
             std::scoped_lock lock(_write_guard);
             // Safety: For now, only allow one pedestal to be registered
-            _gains.clear();
+            if (!_gains.contains(exposure_ns)) {
+                _gains.clear();
+            }
             _gains[exposure_ns][halfmodule_index][0] = dev_0;
             _gains[exposure_ns][halfmodule_index][1] = dev_1;
             _gains[exposure_ns][halfmodule_index][2] = dev_2;
@@ -289,6 +291,8 @@ class PedestalsLibrary {
                               pedestal_0.data(),
                               pedestal_0.size_bytes(),
                               cudaMemcpyHostToDevice));
+        print(
+            "Registering pedestals for {} ns {} hmi\n", exposure_ns, halfmodule_index);
     }
 
   private:
