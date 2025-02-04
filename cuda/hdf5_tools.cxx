@@ -100,3 +100,20 @@ auto read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
     -> zeus::expected<Array2D<double>, std::string> {
     return _read_2d_dataset<double>(root_group, path_to_dataset);
 }
+
+template <>
+auto write_scalar_hdf5_value(hid_t root_group, std::string path, std::string value)
+    -> void {
+    auto dataspace = H5Cleanup<H5Sclose>(H5Screate(H5S_SCALAR));
+    auto datatype = H5Cleanup<H5Tclose>(H5Tcopy(H5T_C_S1));
+    H5Tset_size(datatype, H5T_VARIABLE);
+    auto dataset = H5Cleanup<H5Dclose>(H5Dcreate(root_group,
+                                                 path.c_str(),
+                                                 datatype,
+                                                 dataspace,
+                                                 H5P_DEFAULT,
+                                                 H5P_DEFAULT,
+                                                 H5P_DEFAULT));
+    auto ret =
+        H5Dwrite(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, value.c_str());
+}

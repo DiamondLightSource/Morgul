@@ -113,6 +113,31 @@ auto read_single_hdf5_value(hid_t root_group, std::string path)
     return output;
 }
 
+template <typename T>
+inline hid_t H5T;
+
+template <>
+inline hid_t H5T<float> = H5T_NATIVE_FLOAT;
+
+template <typename T>
+auto write_scalar_hdf5_value(hid_t root_group, std::string path, T value) -> void {
+    auto dataspace = H5Cleanup<H5Sclose>(H5Screate(H5S_SCALAR));
+    auto dataset = H5Cleanup<H5Dclose>(H5Dcreate(root_group,
+                                                 path.c_str(),
+                                                 H5T<float>,
+                                                 dataspace,
+                                                 H5P_DEFAULT,
+                                                 H5P_DEFAULT,
+                                                 H5P_DEFAULT));
+    // dataspace
+    auto ret = H5Dwrite(dataset, H5T<float>, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value);
+}
+
+template <>
+auto write_scalar_hdf5_value<std::string>(hid_t root_group,
+                                          std::string path,
+                                          std::string value) -> void;
+
 template <>
 auto read_single_hdf5_value(hid_t root_group, const std::string path)
     -> zeus::expected<std::string, std::string>;
