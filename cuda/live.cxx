@@ -259,6 +259,10 @@ class PedestalsLibrary {
     void save_pedestals() {
         if (_gains.size() == 0) return;
         assert(_gains.size() == 1);
+        // Because HDF5, only allow us to do this one-at-a-time
+        static std::mutex hdf5_write_lock;
+        auto lock = std::scoped_lock(hdf5_write_lock);
+
         auto file = H5Cleanup<H5Fclose>(H5Fcreate(
             "/dev/shm/pedestals.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT));
         std::vector<PedestalsLibrary::pedestal_t> pedestal_host(HM_PIXELS);
