@@ -236,14 +236,14 @@ class PedestalsLibrary {
                             std::span<pedestal_t> pedestal_0,
                             std::span<pedestal_t> pedestal_1,
                             std::span<pedestal_t> pedestal_2) {
-        // Safety: For now, only allow one pedestal to be registered
-        _gains.clear();
         auto dev_0 = make_cuda_malloc<float>(HM_PIXELS);
         auto dev_1 = make_cuda_malloc<float>(HM_PIXELS);
         auto dev_2 = make_cuda_malloc<float>(HM_PIXELS);
 
         {
             std::scoped_lock lock(_write_guard);
+            // Safety: For now, only allow one pedestal to be registered
+            _gains.clear();
             _gains[exposure_ns][halfmodule_index][0] = dev_0;
             _gains[exposure_ns][halfmodule_index][1] = dev_1;
             _gains[exposure_ns][halfmodule_index][2] = dev_2;
