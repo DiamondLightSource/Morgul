@@ -662,7 +662,11 @@ auto do_live(Arguments &args) -> void {
 
     auto gain_maps = getenv_or("GAIN_MAPS", GAIN_MAPS).value();
     print("GPU:      {}\n", args.cuda_device_signature);
-    print("Detector: {}\n", styled(args.detector, emphasis::bold));
+    if (args.detector == JF1M) {
+        print("Detector: {}\n", JF1M_Display);
+    } else {
+        print("Detector: {}\n", styled(args.detector, emphasis::bold));
+    }
 
     // Load calibration data into device memory for efficient access
     auto gains = GainData(gain_maps, args.detector);

@@ -32,6 +32,11 @@ const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETE
 
 /// Size of detector, in (columns, rows)
 const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}}};
+
+static const std::string JF1M_Display{
+    "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m1\e[39m\e[38;5;93mM\e["
+    "39m\e[38;5;33m\e[39m\e[0m\n"};
+
 #endif
 
 /// Names for gain modes
