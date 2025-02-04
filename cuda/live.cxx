@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <stop_token>
@@ -238,9 +239,12 @@ class PedestalsLibrary {
         auto dev_1 = make_cuda_malloc<float>(HM_PIXELS);
         auto dev_2 = make_cuda_malloc<float>(HM_PIXELS);
 
-        _gains[exposure_ns][halfmodule_index][0] = dev_0;
-        _gains[exposure_ns][halfmodule_index][1] = dev_1;
-        _gains[exposure_ns][halfmodule_index][2] = dev_2;
+        {
+            std::scoped_lock lock(_write_guard);
+            _gains[exposure_ns][halfmodule_index][0] = dev_0;
+            _gains[exposure_ns][halfmodule_index][1] = dev_1;
+            _gains[exposure_ns][halfmodule_index][2] = dev_2;
+        }
         assert(pedestal_0.size() == HM_PIXELS);
         assert(pedestal_1.size() == HM_PIXELS);
         assert(pedestal_2.size() == HM_PIXELS);
@@ -263,6 +267,7 @@ class PedestalsLibrary {
              std::map<uint8_t, std::map<uint8_t, std::shared_ptr<pedestal_t[]>>>>
         _gains;
     const Detector _detector;
+    std::mutex _write_guard;
 };
 
 #pragma region Handler Class
