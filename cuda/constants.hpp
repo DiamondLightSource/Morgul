@@ -5,7 +5,7 @@
 #include <string>
 #include <tuple>
 
-const auto GAIN_MAPS = std::filesystem::path{"/dls_sw/apps/jungfrau/calibration"};
+const auto GAIN_MAPS = std::filesystem::path{"/scratch/nickd/GAINS"};
 
 using Detector = std::string;
 
