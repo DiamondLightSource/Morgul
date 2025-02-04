@@ -228,6 +228,9 @@ class PedestalsLibrary {
         return {lookup.at(0).get(), lookup.at(1).get(), lookup.at(2).get()};
     }
 
+    /// @brief Register a new set of pedestal data
+    ///
+    /// Safe to call from multiple threads.
     void register_pedestals(uint64_t exposure_ns,
                             uint8_t halfmodule_index,
                             std::span<pedestal_t> pedestal_0,
@@ -288,7 +291,7 @@ class DataStreamHandler {
                       uint16_t port,
                       const CudaStream &stream,
                       const GainData &gains,
-                      const PedestalsLibrary &pedestals,
+                      PedestalsLibrary &pedestals,
                       zmq::socket_t &send_socket)
         : _args(args),
           _port(port),
@@ -326,7 +329,7 @@ class DataStreamHandler {
     uint16_t _port;
     const CudaStream &stream;
     const GainData &gains;
-    const PedestalsLibrary &pedestals;
+    PedestalsLibrary &pedestals;
     zmq::socket_t &send;
     std::unique_ptr<pixel_t[]> corrected_buffer =
         std::make_unique<pixel_t[]>(HM_PIXELS);
@@ -523,14 +526,21 @@ auto DataStreamHandler::end_acquisition() -> void {
 
     if (is_pedestal_mode) {
         std::vector<std::byte> pedestal_mask(HM_PIXELS);
-        std::vector<float> pedestals(HM_PIXELS * GAIN_MODES.size());
+        std::vector<PedestalsLibrary::pedestal_t> new_pedestals(HM_PIXELS
+                                                                * GAIN_MODES.size());
 
         call_jungfrau_pedestal_finalize(stream,
                                         pedestal_n.get(),
                                         pedestal_x.get(),
-                                        pedestals.data(),
+                                        new_pedestals.data(),
                                         reinterpret_cast<bool *>(pedestal_mask.data()));
         CUDA_CHECK(cudaStreamSynchronize(stream));
+
+        pedestals.register_pedestals(exposure_ns,
+                                     known_hmi.value(),
+                                     {new_pedestals.data(), HM_PIXELS},
+                                     {new_pedestals.data() + HM_PIXELS, HM_PIXELS},
+                                     {new_pedestals.data() + HM_PIXELS * 2, HM_PIXELS});
     }
     num_images_seen = 0;
     highest_image_seen = 0;
