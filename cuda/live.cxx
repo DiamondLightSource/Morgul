@@ -253,6 +253,7 @@ class PedestalsLibrary {
         return {lookup.at(0).get(), lookup.at(1).get(), lookup.at(2).get()};
     }
 
+    void save_pedestals() {}
     /// @brief Register a new set of pedestal data
     ///
     /// Safe to call from multiple threads.
@@ -311,6 +312,7 @@ class DataStreamHandler {
     // Keep track of the last frame number seen, so we know if a frame was skipped
     uint64_t hm_frameNumber = 0;
     uint64_t exposure_ns = 0;
+    bool is_pedestal_mode = false;
 
     DataStreamHandler(const Arguments &args,
                       uint16_t port,
@@ -365,7 +367,6 @@ class DataStreamHandler {
     std::shared_ptr<uint32_t[]> pedestal_n;
     std::shared_ptr<uint32_t[]> pedestal_x;
     std::shared_ptr<uint64_t[]> pedestal_x_sq;
-    bool is_pedestal_mode = false;
 };
 
 #pragma region Validate Header
@@ -664,6 +665,7 @@ auto zmq_listen(std::stop_token stop,
                 recv_msgs[1].size() / 2};
             handler.process_frame(header, data);
         }
+        bool was_pedestals = handler.is_pedestal_mode;
         handler.end_acquisition();
         // Now, wait until all frames have completed
         sync_barrier.arrive_and_wait();
@@ -672,6 +674,9 @@ auto zmq_listen(std::stop_token stop,
             print("Acquisition {} complete\n", acquisition_number);
             ++acquisition_number;
             acq_progress = 0;
+            if (was_pedestals) {
+                pedestals.save_pedestals();
+            }
         }
     }
 }
