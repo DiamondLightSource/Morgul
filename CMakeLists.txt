@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.20...3.30)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
 
-project(morgul LANGUAGES CXX CUDA)
+project(morgul LANGUAGES C CXX CUDA)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 
@@ -51,13 +51,21 @@ set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(zeus_expected)
 
 find_package(LZ4 REQUIRED)
-find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(HDF5 REQUIRED)
 find_package(lodepng REQUIRED)
 find_package(cppzmq REQUIRED)
 
 ensure_submodule(modules/bitshuffle)
+add_library(
+    bitshuffle
+    modules/bitshuffle/src/bitshuffle.c
+    modules/bitshuffle/src/bitshuffle_core.c
+    modules/bitshuffle/src/iochain.c
+    modules/bitshuffle/lz4/lz4.c
+)
+target_include_directories(bitshuffle PUBLIC modules/bitshuffle/src modules/bitshuffle/lz4)
+
 add_executable(
     morgul-cuda
     cuda/main.cxx
@@ -72,7 +80,7 @@ target_link_libraries(
     morgul-cuda
     PRIVATE
     argparse
-    Bitshuffle::bitshuffle
+    bitshuffle
     cppzmq
     CUDA::cudart
     date::date
