@@ -1,5 +1,6 @@
 
 #include <fmt/ranges.h>
+#include <pthread.h>
 
 #include <array>
 #include <atomic>
@@ -604,6 +605,9 @@ auto do_live(Arguments &args) -> void {
                                  std::cref(gains),
                                  std::cref(pedestals),
                                  port);
+            std::jthread &thread = threads.back();
+            std::string name = fmt::format("listen_{}", port);
+            pthread_setname_np(thread.native_handle(), name.c_str());
         }
         while (true) {
             while (threads_waiting == args.zmq_listeners) {
