@@ -41,6 +41,7 @@ std::atomic_int threads_waiting{0};
 /// Used to identify the first validation each acquisition, to avoid spamming
 std::atomic_bool is_first_validation_this_acquisition{false};
 std::atomic_int acquisition_number{0};
+std::atomic<float> acq_progress{0};
 
 /// Get an environment variable if present, with optional default
 auto getenv_or(std::string name, std::optional<std::string> _default = std::nullopt)
@@ -529,7 +530,7 @@ auto zmq_listen(std::stop_token stop,
                       handler.known_hmi.value());
                 break;
             }
-            print("{}: {}", port, recv_msgs[0].to_string_view());
+            // print("{}: {}", port, recv_msgs[0].to_string_view());
             auto header =
                 json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
             if (ret == 1 && header.bitmode == 0) {
@@ -543,7 +544,9 @@ auto zmq_listen(std::stop_token stop,
                       recv_msgs[0].to_string_view());
                 continue;
             }
-
+            if (port == args.zmq_port) {
+                acq_progress = header.progress;
+            }
             // We have a standard image packet
             // Validate the header, and skip this image if invalid
             if (!handler.validate_header(header)) {
@@ -561,6 +564,7 @@ auto zmq_listen(std::stop_token stop,
         if (port == args.zmq_port) {
             print("Acquisition {} complete\n", acquisition_number);
             ++acquisition_number;
+            acq_progress = 0;
         }
     }
 }
@@ -610,10 +614,15 @@ auto do_live(Arguments &args) -> void {
             pthread_setname_np(thread.native_handle(), name.c_str());
         }
         while (true) {
-            while (threads_waiting == args.zmq_listeners) {
+            if (threads_waiting == args.zmq_listeners) {
                 spinner("All listeners waiting");
-                std::this_thread::sleep_for(80ms);
+            } else {
+                auto msg = fmt::format("  Progress {:3}: {:3.2f} %                  \r",
+                                       acquisition_number,
+                                       acq_progress);
+                std::cout << msg << std::flush;
             }
+            std::this_thread::sleep_for(80ms);
         }
     }
     // Only happens if we change to terminate
