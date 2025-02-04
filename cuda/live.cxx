@@ -208,6 +208,63 @@ void from_json(const json &j, SLSHeader &h) {
 }
 #pragma endregion
 
+#pragma region Pedestal Library
+
+class PedestalsLibrary {
+  public:
+    typedef float pedestal_t;
+    using GainModePointers = std::array<pedestal_t *, GAIN_MODES.size()>;
+
+    PedestalsLibrary(Detector detector) : _detector(detector) {}
+
+    bool has_pedestals(uint64_t exposure_ns, uint8_t halfmodule_index) const {
+        return _gains.contains(exposure_ns)
+               && _gains.at(exposure_ns).contains(halfmodule_index);
+    }
+    auto get_gpu_ptrs(uint64_t exposure_ns, uint8_t halfmodule_index) const
+        -> GainModePointers {
+        auto &lookup = _gains.at(exposure_ns).at(halfmodule_index);
+        return {lookup.at(0).get(), lookup.at(1).get(), lookup.at(2).get()};
+    }
+
+    void register_pedestals(uint64_t exposure_ns,
+                            uint8_t halfmodule_index,
+                            std::span<pedestal_t> pedestal_0,
+                            std::span<pedestal_t> pedestal_1,
+                            std::span<pedestal_t> pedestal_2) {
+        // Safety: For now, only allow one pedestal to be registered
+        _gains.clear();
+        auto dev_0 = make_cuda_malloc<float>(HM_PIXELS);
+        auto dev_1 = make_cuda_malloc<float>(HM_PIXELS);
+        auto dev_2 = make_cuda_malloc<float>(HM_PIXELS);
+
+        _gains[exposure_ns][halfmodule_index][0] = dev_0;
+        _gains[exposure_ns][halfmodule_index][1] = dev_1;
+        _gains[exposure_ns][halfmodule_index][2] = dev_2;
+        assert(pedestal_0.size() == HM_PIXELS);
+        assert(pedestal_1.size() == HM_PIXELS);
+        assert(pedestal_2.size() == HM_PIXELS);
+        CUDA_CHECK(cudaMemcpy(dev_0.get(),
+                              pedestal_0.data(),
+                              pedestal_0.size_bytes(),
+                              cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev_1.get(),
+                              pedestal_0.data(),
+                              pedestal_0.size_bytes(),
+                              cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev_2.get(),
+                              pedestal_0.data(),
+                              pedestal_0.size_bytes(),
+                              cudaMemcpyHostToDevice));
+    }
+
+  private:
+    std::map<uint64_t,
+             std::map<uint8_t, std::map<uint8_t, std::shared_ptr<pedestal_t[]>>>>
+        _gains;
+    const Detector _detector;
+};
+
 #pragma region Handler Class
 class DataStreamHandler {
   public:
@@ -225,7 +282,7 @@ class DataStreamHandler {
                       uint16_t port,
                       const CudaStream &stream,
                       const GainData &gains,
-                      const PedestalData &pedestals,
+                      const PedestalsLibrary &pedestals,
                       zmq::socket_t &send_socket)
         : _args(args),
           _port(port),
@@ -263,7 +320,7 @@ class DataStreamHandler {
     uint16_t _port;
     const CudaStream &stream;
     const GainData &gains;
-    const PedestalData &pedestals;
+    const PedestalsLibrary &pedestals;
     zmq::socket_t &send;
     std::unique_ptr<pixel_t[]> corrected_buffer =
         std::make_unique<pixel_t[]>(HM_PIXELS);
@@ -481,7 +538,7 @@ auto zmq_listen(std::stop_token stop,
                 std::barrier<> &sync_barrier,
                 const Arguments &args,
                 const GainData &gains,
-                const PedestalData &pedestals,
+                PedestalsLibrary &pedestals,
                 uint16_t port) -> void {
     // For now, each thread gets it's own context. We can experiment
     // with shared later. The Guide (not that one) suggests one IO
@@ -586,8 +643,7 @@ auto do_live(Arguments &args) -> void {
     auto gains = GainData(gain_maps, args.detector);
     gains.upload();
 
-    auto pedestals = PedestalData(PEDESTAL_DATA, args.detector);
-    pedestals.upload();
+    auto pedestals = PedestalsLibrary(args.detector);
 
     print("Connecting to {}\n",
           styled(fmt::format("tcp://{}:{}-{}",
@@ -607,7 +663,7 @@ auto do_live(Arguments &args) -> void {
                                  std::ref(barrier),
                                  args,
                                  std::cref(gains),
-                                 std::cref(pedestals),
+                                 std::ref(pedestals),
                                  port);
             std::jthread &thread = threads.back();
             std::string name = fmt::format("listen_{}", port);
