@@ -706,7 +706,6 @@ auto do_live(Arguments &args) -> void {
                              args.zmq_port + args.zmq_listeners - 1),
                  style::url));
     // Now we know how many workers, we can construct the global barrier
-    // worker_sync = std::make_unique<std::barrier<>>(args.zmq_listeners);
     auto barrier = std::barrier{args.zmq_listeners};
     {
         std::vector<std::jthread> threads;
