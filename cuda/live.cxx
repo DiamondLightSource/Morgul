@@ -6,6 +6,7 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
@@ -212,11 +213,35 @@ void from_json(const json &j, SLSHeader &h) {
 #pragma region Pedestal Library
 
 class PedestalsLibrary {
+    auto load_pedestal_cache(std::filesystem::path path) -> bool {
+        auto pd = PedestalData(path, _detector);
+        auto [dx, dy] = DETECTOR_SIZE.at(_detector);
+        uint64_t exposure_ns = llrint(pd.exposure_time() * 1e9);
+        for (size_t m = 0; m < dx * dy * 2; ++m) {
+            auto &ped_0 = pd.get_pedestal(m, 0);
+            auto &ped_1 = pd.get_pedestal(m, 1);
+            auto &ped_2 = pd.get_pedestal(m, 2);
+            register_pedestals(
+                exposure_ns, m, ped_0.data(), ped_1.data(), ped_2.data());
+        }
+        // print("Loaded prexisting {:.1} ms pedestals from {}\n",
+        //       styled(pd.exposure_time() * 1000, style::number),
+        //       styled(path, style::path));
+        return true;
+    }
+
   public:
     typedef float pedestal_t;
     using GainModePointers = std::array<pedestal_t *, GAIN_MODES.size()>;
 
-    PedestalsLibrary(Detector detector) : _detector(detector) {}
+    PedestalsLibrary(Detector detector) : _detector(detector) {
+        assert(detector == JF1M);
+        // Try to load existing data from /dev/shm
+        auto store = std::filesystem::path{"/dev/shm/pedestals.h5"};
+        if (std::filesystem::exists(store)) {
+            load_pedestal_cache(store);
+        }
+    }
 
     bool has_pedestals(uint64_t exposure_ns, uint8_t halfmodule_index) const {
         return _gains.contains(exposure_ns)
