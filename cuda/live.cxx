@@ -516,18 +516,13 @@ auto DataStreamHandler::end_acquisition() -> void {
     }
 
     if (is_pedestal_mode) {
-        std::vector<std::byte> pedestal_mask{HM_PIXELS};
-
-        // std::vector<float> pedestals{HM_PIXELS * GAIN_MODES.size()};
-        auto pedestals = make_cuda_malloc<float>(HM_PIXELS * GAIN_MODES.size());
-        // auto pedestal_mask = make_cuda_malloc<bool>(HM_PIXELS);
-        print("Mask vector size: {}\n", pedestal_mask.size());
-        // print("Vector size:      {}\n", pedestals.size());
+        std::vector<std::byte> pedestal_mask(HM_PIXELS);
+        std::vector<float> pedestals(HM_PIXELS * GAIN_MODES.size());
 
         call_jungfrau_pedestal_finalize(stream,
                                         pedestal_n.get(),
                                         pedestal_x.get(),
-                                        pedestals.get(),
+                                        pedestals.data(),
                                         reinterpret_cast<bool *>(pedestal_mask.data()));
         CUDA_CHECK(cudaStreamSynchronize(stream));
     }
