@@ -13,6 +13,7 @@ import time
 from argparse import ArgumentParser
 
 import h5py
+import hdf5plugin  # noqa: F401
 import numpy
 import zmq
 
