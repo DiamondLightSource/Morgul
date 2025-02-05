@@ -673,6 +673,7 @@ auto zmq_listen(std::stop_token stop,
         // Wait for the next message. Count waiting so we know when we are idle.
         // Between acquisitions we wait as long as it takes
         sub.set(zmq::sockopt::rcvtimeo, -1);
+        size_t num_frames_seen = 0;
         // Loop over images within an acquisition
         while (!stop.stop_requested()) {
             std::vector<zmq::message_t> recv_msgs;
@@ -691,7 +692,10 @@ auto zmq_listen(std::stop_token stop,
                       handler.known_hmi.value());
                 break;
             }
-            // print("{}: {}", port, recv_msgs[0].to_string_view());
+
+            if (num_frames_seen == 0) {
+                print("{}: {}", port, recv_msgs[0].to_string_view());
+            }
             auto header =
                 json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
             if (ret == 1 && header.bitmode == 0) {
@@ -708,6 +712,7 @@ auto zmq_listen(std::stop_token stop,
             if (port == args.zmq_port) {
                 acq_progress = header.progress;
             }
+            ++num_frames_seen;
             // We have a standard image packet
             // Validate the header, and skip this image if invalid
             if (!handler.validate_header(header)) {
