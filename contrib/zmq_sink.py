@@ -47,20 +47,27 @@ data = fout.create_dataset(
 
 timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
 
-for count in range(total):
-    messages = socket.recv_multipart()
-    continue
-    # header = json.loads(messages[0])
-    # frame = header["frameIndex"]
-    header = json.loads(messages[0])
-    frame = header["frameIndex"]
-    offset = (frame, 0, 0)
-    data.id.write_direct_chunk(offset, messages[1])
-    timestamp[frame] = time.time()
-    if count == 0:
-        with open(f"raw_{port}.dat", "wb") as f:
-            f.write(messages[1])
+try:
+    for count in range(total):
+        messages = socket.recv_multipart()
+        socket.setsockopt(zmq.RCVTIMEO, 2000)
 
-fout.create_dataset("timestamp", shape=(total,), data=timestamp, dtype=numpy.float64)
+        # header = json.loads(messages[0])
+        # frame = header["frameIndex"]
+        header = json.loads(messages[0])
+        frame = header["frameIndex"]
+        offset = (frame, 0, 0)
+        data.id.write_direct_chunk(offset, messages[1])
+        timestamp[frame] = time.time()
+        if count == 0:
+            with open(f"raw_{port}.dat", "wb") as f:
+                f.write(messages[1])
+except zmq.Again:
+    print("Got timeout waiting for more images")
+finally:
+    fout.create_dataset(
+        "timestamp", shape=(total,), data=timestamp, dtype=numpy.float64
+    )
 
-fout.close()
+    fout.close()
+    print("Closed data file")
