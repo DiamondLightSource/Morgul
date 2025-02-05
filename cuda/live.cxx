@@ -589,11 +589,16 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     uncompress_size = __builtin_bswap64(2 * 256 * 1024);
     block_size = __builtin_bswap32(8192);
 
-    launch_bitshuffle(output_buffer,
+    launch_bitshuffle(stream,
+                      output_buffer,
                       output_buffer,
                       dev_bitshuffle_buffer_in.get(),
                       dev_bitshuffle_buffer_out.get());
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
+    // auto try2 = std::vector<std::byte>(HM_PIXELS*2+12);
+    // auto size1 = bshuf_compress_lz4(
+    //     output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
     auto size =
         LZ4_compress_default(reinterpret_cast<char *>(output_buffer),
                              reinterpret_cast<char *>(compression_buffer.data()) + 12,

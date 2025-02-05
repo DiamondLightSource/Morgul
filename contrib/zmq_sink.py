@@ -49,7 +49,6 @@ timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
 
 for count in range(total):
     messages = socket.recv_multipart()
-    continue
     # header = json.loads(messages[0])
     # frame = header["frameIndex"]
     header = json.loads(messages[0])

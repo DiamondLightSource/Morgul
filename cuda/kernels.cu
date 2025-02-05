@@ -153,10 +153,14 @@ __global__ void bitshuffle(const uint8_t *in, uint8_t *out) {
         ((const uint64_t *)scr1)[(i2 * ELEM + j2) * SIZE / 64 + k2];
 }
 
-void launch_bitshuffle(void *in, void *out, void *d_in, void *d_out) {
+void launch_bitshuffle(cudaStream_t stream,
+                       void *in,
+                       void *out,
+                       void *d_in,
+                       void *d_out) {
     const dim3 block(1024);
     const dim3 grid(64);
     cudaMemcpy(d_in, in, 256 * 1024 * sizeof(uint16_t), cudaMemcpyHostToDevice);
-    bitshuffle<<<grid, block>>>((const uint8_t *)d_in, (uint8_t *)d_out);
+    bitshuffle<<<grid, block, 0, stream>>>((const uint8_t *)d_in, (uint8_t *)d_out);
     cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t), cudaMemcpyDeviceToHost);
 }
