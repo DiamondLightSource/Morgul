@@ -269,7 +269,7 @@ class PedestalsLibrary {
         for (auto [exp, hmod_map] : _gains) {
             write_scalar_hdf5_value<float>(
                 file, "/exptime", static_cast<float>(exp) * 1e9f);
-            write_scalar_hdf5_value<std::string>(file, "/modulemode", {"half"});
+            // write_scalar_hdf5_value<std::string>(file, "/modulemode", {"half"});
             for (auto [hmi, hm_gains] : hmod_map) {
                 auto group_name = fmt::format("hmi_{:02}", hmi);
                 auto hm_group = H5Cleanup<H5Gclose>(H5Gcreate(
