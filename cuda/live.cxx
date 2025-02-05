@@ -163,7 +163,7 @@ void from_json(const json &j, DLSHeaderAdditions &d) {
     d.raw = read_boolish_json(j, "raw");
     if (j.contains("wavelength")) {
         auto value = j.at("wavelength").template get<std::string>();
-        double wavelength_angstrom = std::strtod(value.c_str(), nullptr) / 10;
+        double wavelength_angstrom = std::strtod(value.c_str(), nullptr) * 10;
         double energy_kev = 12.39841984055037 / wavelength_angstrom;
         d.energy = energy_kev;
     }
