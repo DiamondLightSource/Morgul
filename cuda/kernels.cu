@@ -10,7 +10,7 @@ __global__ void jungfrau_image_corrections(GainData::GainModePointers gains,
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     int index = y * HM_WIDTH + x;
     int gain_mode = halfmodule_data[index] >> 14;
-    int value = halfmodule_data[index] & 0x3fff;
+    float value = halfmodule_data[index] & 0x3fff;
     if (gain_mode == 3) {
         gain_mode = 2;
     }
