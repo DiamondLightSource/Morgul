@@ -382,6 +382,7 @@ class DataStreamHandler {
         // Work out the maximum size the compressed data can be, add 12 for the HDF5 header
         size_t compress_size = LZ4_compressBound(sizeof(pixel_t) * HM_PIXELS) + 12;
         compression_buffer = std::vector<std::byte>(compress_size);
+        // partial_compression_buffer = std::vector<std::byte>(LZ4_compressBound(sizeof(pixel_t) * HM_PIXELS) + 12;)
         assert(compression_buffer.size() == compress_size);
 
         pedestal_n = make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_PIXELS);
@@ -417,6 +418,7 @@ class DataStreamHandler {
     std::unique_ptr<pixel_t[]> corrected_buffer =
         std::make_unique<pixel_t[]>(HM_PIXELS);
     std::vector<std::byte> compression_buffer;
+    std::vector<std::byte> partial_compression_buffer;
     // Accumulation buffers for calculating pedestals on-the-fly
     // Note: Because the value is max. 14-bit, we have worst-case 18-bits
     // of count before 32-bit saturation, so n is 32-bit to cover this.
@@ -596,16 +598,18 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                       dev_bitshuffle_buffer_out.get());
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    // auto try2 = std::vector<std::byte>(HM_PIXELS*2+12);
-    // auto size1 = bshuf_compress_lz4(
-    //     output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
-    auto size =
-        LZ4_compress_default(reinterpret_cast<char *>(output_buffer),
-                             reinterpret_cast<char *>(compression_buffer.data()) + 12,
-                             HM_PIXELS * 2,
-                             compression_buffer.size());
-    // auto size = bshuf_compress_lz4(
-    //     output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
+    size_t current_index = 12;
+    for (size_t block = 0; block < HM_PIXELS * 2 / 8192; ++block) {
+        auto size = LZ4_compress_default(
+            reinterpret_cast<char *>(output_buffer + block * 4096),
+            reinterpret_cast<char *>(compression_buffer.data()) + current_index + 4,
+            8192,
+            compression_buffer.size() - current_index - 4);
+        uint32_t &block_size =
+            *reinterpret_cast<uint32_t *>(compression_buffer.data() + current_index);
+        block_size = __builtin_bswap32(size);
+        current_index += size + 4;
+    }
 
     zmq::multipart_t send_msgs;
     json send_header;
@@ -617,7 +621,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["expLength"] = header.expLength;
     send_header["acquisition"] = acquisition_number.load();
     send_msgs.push_back(zmq::message_t(send_header.dump()));
-    send_msgs.push_back(zmq::message_t(compression_buffer.data(), size + 12));
+    send_msgs.push_back(zmq::message_t(compression_buffer.data(), current_index));
     zmq::send_multipart(send, send_msgs);
 }
 
