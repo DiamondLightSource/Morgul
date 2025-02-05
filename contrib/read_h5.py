@@ -18,4 +18,5 @@ args = parser.parse_args()
 
 f = h5py.File(args.filename)
 
-print(repr(f["data"][0]))
+for i in range(f["data"].shape[0]):
+    print(repr(f["data"][i]))
