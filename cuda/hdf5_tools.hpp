@@ -36,6 +36,10 @@ struct H5Cleanup {
     hid_t id;
 };
 
+using H5Fcleanup = H5Cleanup<H5Fclose>;
+using H5Dcleanup = H5Cleanup<H5Dclose>;
+using H5Scleanup = H5Cleanup<H5Sclose>;
+
 template <typename T>
 auto read_single_hdf5_value(hid_t root_group, std::string path)
     -> zeus::expected<T, std::string> {
@@ -124,7 +128,7 @@ auto write_scalar_hdf5_value(hid_t root_group, std::string path, T value) -> voi
     auto dataspace = H5Cleanup<H5Sclose>(H5Screate(H5S_SCALAR));
     auto dataset = H5Cleanup<H5Dclose>(H5Dcreate(root_group,
                                                  path.c_str(),
-                                                 H5T<float>,
+                                                 H5T<T>,
                                                  dataspace,
                                                  H5P_DEFAULT,
                                                  H5P_DEFAULT,

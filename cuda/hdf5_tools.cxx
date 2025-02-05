@@ -1,5 +1,7 @@
 #include "hdf5_tools.hpp"
 
+#include <fmt/core.h>
+
 #include <cstdlib>
 
 auto H5Iget_name(hid_t identifier) -> std::optional<std::string> {
@@ -102,8 +104,9 @@ auto read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
 }
 
 template <>
-auto write_scalar_hdf5_value(hid_t root_group, std::string path, std::string value)
-    -> void {
+auto write_scalar_hdf5_value<std::string>(hid_t root_group,
+                                          std::string path,
+                                          std::string value) -> void {
     auto dataspace = H5Cleanup<H5Sclose>(H5Screate(H5S_SCALAR));
     auto datatype = H5Cleanup<H5Tclose>(H5Tcopy(H5T_C_S1));
     H5Tset_size(datatype, H5T_VARIABLE);
@@ -114,6 +117,6 @@ auto write_scalar_hdf5_value(hid_t root_group, std::string path, std::string val
                                                  H5P_DEFAULT,
                                                  H5P_DEFAULT,
                                                  H5P_DEFAULT));
-    auto ret =
-        H5Dwrite(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, value.c_str());
+    const char *data = value.c_str();
+    auto ret = H5Dwrite(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &data);
 }

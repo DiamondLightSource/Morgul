@@ -49,6 +49,11 @@ FetchContent_Declare(
 )
 set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(zeus_expected)
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/e235eb34c6c4fed790ccdad4b16394301360dcd4.zip
+)
+FetchContent_MakeAvailable(googletest)
 
 find_package(LZ4 REQUIRED)
 find_package(CUDAToolkit REQUIRED)
@@ -66,19 +71,18 @@ add_library(
 )
 target_include_directories(bitshuffle PUBLIC modules/bitshuffle/src modules/bitshuffle/lz4)
 
-add_executable(
-    morgul-cuda
-    cuda/main.cxx
+add_library(
+    libmorgul
+    STATIC
     cuda/correct.cxx
     cuda/calibration.cxx
     cuda/hdf5_tools.cxx
     cuda/live.cxx
     cuda/kernels.cu
 )
-target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_link_libraries(
-    morgul-cuda
-    PRIVATE
+    libmorgul
+    PUBLIC
     argparse
     bitshuffle
     cppzmq
@@ -91,6 +95,20 @@ target_link_libraries(
     nlohmann_json::nlohmann_json
     zeus::expected
 )
-target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
-target_compile_options(morgul-cuda PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>")
+target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
+target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
+target_compile_options(libmorgul PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>")
+target_include_directories(libmorgul INTERFACE cuda)
 # target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
+
+add_executable(morgul-cuda cuda/main.cxx)
+target_link_libraries(morgul-cuda PRIVATE libmorgul)
+
+enable_testing()
+add_executable(
+    morgul-tests
+    tests/test_hdf5.cxx
+)
+target_link_libraries(morgul-tests GTest::gtest_main libmorgul fmt)
+include(GoogleTest)
+gtest_discover_tests(morgul-tests)
