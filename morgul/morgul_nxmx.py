@@ -339,12 +339,11 @@ class JF1MD:
         self.filenames = filenames
         self._handles = [h5py.File(x, "r") for x in filenames]
 
-        self.M418 = [
-            x for x in self._handles if x["row"][()] == 0 and x["column"][()] == 0
-        ][0]
-        self.M420 = [
-            x for x in self._handles if x["row"][()] == 1 and x["column"][()] == 0
-        ][0]
+        self.modules = {}
+        for h in self._handles:
+            self.modules[(h["row"][()], h["column"][()])] = h
+
+        assert len(self.modules) == 4, "Not enough modules"
 
     def __getitem__(self, path):
         # Make sure all files have the same value
@@ -358,37 +357,30 @@ class JF1MD:
     def make_vfs(self, group: h5py.Group):
         frames = max(*[x.shape[0] for x in self.get_all("data")])
 
-        MOD_FAST = 1030
-        MOD_SLOW = 514
-        GAP_FAST = 12  # noqa: F841
-        GAP_SLOW = 38
+        MOD_FAST = 1028
+        MOD_SLOW = 512
+        GAP_SLOW = 36
 
         slow = (2 * MOD_SLOW) + GAP_SLOW
         fast = MOD_FAST
 
         layout = h5py.VirtualLayout(shape=(frames, slow, fast), dtype="i4")
 
-        source0 = h5py.VirtualSource(
-            Path(self.M418.filename).resolve(),
-            "data",
-            shape=(frames, MOD_SLOW, MOD_FAST),
-        )
+        y_offsets = np.cumsum([0, 4, GAP_SLOW, 4])
+        for row, offset in enumerate(y_offsets):
+            source_filename = Path(self.modules[(row, 0)].filename).resolve()
+            source = h5py.VirtualSource(
+                source_filename, "data", shape=(frames, 256, 1024)
+            )
+            y = row * 254 + offset
+            for fast in range(4):
+                x = fast * (254 + 4)
+                real_x = 256 * fast
+                layout[:, y : y + 254, x : x + 254] = source[
+                    :, 1:255, real_x + 1 : real_x + 255
+                ]
 
-        source1 = h5py.VirtualSource(
-            Path(self.M420.filename).resolve(),
-            "data",
-            shape=(frames, MOD_SLOW, MOD_FAST),
-        )
-        s0 = MOD_SLOW + GAP_SLOW
-        layout[:, :MOD_SLOW, :] = source1[:, :, :]
-        layout[:, s0:, :] = source0[:, :, :]
-        # del f["entry"]["data"]["data"]
-        # for k in list(f["entry"]["data"].keys()):
-        #     if k.startswith("data_"):
-        #         del f["entry"]["data"][k]
-        group.create_virtual_dataset(
-            "data_000001", layout, fillvalue=0b10000000000000000000000000000000
-        )
+        group.create_virtual_dataset("data_000001", layout, fillvalue=0x8000)
 
 
 def nxmx(
