@@ -22,3 +22,4 @@ void call_jungfrau_pedestal_finalize(cudaStream_t stream,
                                      const uint32_t *pedestals_x,
                                      float *pedestals,
                                      bool *pedestals_mask);
+void launch_bitshuffle(void *in, void *out, void *d_in, void *d_out);

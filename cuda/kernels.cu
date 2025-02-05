@@ -104,3 +104,59 @@ void call_jungfrau_pedestal_finalize(cudaStream_t stream,
                                  stream>>>(
         pedestals_n, pedestals_x, pedestals, pedestals_mask);
 }
+
+#define SIZE 4096
+#define ELEM 2
+
+__global__ void bitshuffle(const uint8_t *in, uint8_t *out) {
+    const int b = blockIdx.x;
+
+    in += b * SIZE * ELEM;
+    out += b * SIZE * ELEM;
+
+    __shared__ uint8_t scr0[SIZE * ELEM];
+    __shared__ uint8_t scr1[SIZE * ELEM];
+
+    const int tid = threadIdx.x;
+
+    const int i0 = (tid & 0xffe) << 2;
+    const int j0 = tid & 0x1;
+
+    for (int k = 0; k < 8; k++) {
+        scr0[j0 * SIZE + i0 + k] = in[(i0 + k) * ELEM + j0];
+    }
+
+    __syncthreads();
+
+    uint64_t x, t;
+
+    x = ((const uint64_t *)scr0)[tid];
+
+    t = (x ^ (x >> 7)) & 0x00AA00AA00AA00AALL;
+    x = x ^ t ^ (t << 7);
+    t = (x ^ (x >> 14)) & 0x0000CCCC0000CCCCLL;
+    x = x ^ t ^ (t << 14);
+    t = (x ^ (x >> 28)) & 0x00000000F0F0F0F0LL;
+    x = x ^ t ^ (t << 28);
+
+    for (int k = 0; k < 8; k++) {
+        scr1[k * ELEM * SIZE / 8 + tid] = x;
+        x = x >> 8;
+    }
+
+    __syncthreads();
+
+    const int i2 = (tid & 0xe) >> 1;
+    const int j2 = tid & 0x1;
+    const int k2 = tid >> 4;
+    ((uint64_t *)out)[(j2 * 8 + i2) * SIZE / 64 + k2] =
+        ((const uint64_t *)scr1)[(i2 * ELEM + j2) * SIZE / 64 + k2];
+}
+
+void launch_bitshuffle(void *in, void *out, void *d_in, void *d_out) {
+    const dim3 block(1024);
+    const dim3 grid(64);
+    cudaMemcpy(d_in, in, 256 * 1024 * sizeof(uint16_t), cudaMemcpyHostToDevice);
+    bitshuffle<<<grid, block>>>((const uint8_t *)d_in, (uint8_t *)d_out);
+    cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t), cudaMemcpyDeviceToHost);
+}

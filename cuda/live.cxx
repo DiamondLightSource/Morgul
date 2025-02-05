@@ -381,12 +381,15 @@ class DataStreamHandler {
         is_first_validation_this_acquisition.store(true);
         // Work out the maximum size the compressed data can be, add 12 for the HDF5 header
         size_t compress_size = LZ4_compressBound(sizeof(pixel_t) * HM_PIXELS) + 12;
-        compression_buffer = std::make_unique<std::byte[]>(compress_size);
+        compression_buffer = std::vector<std::byte>(compress_size);
+        assert(compression_buffer.size() == compress_size);
 
         pedestal_n = make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_PIXELS);
         pedestal_x = make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_PIXELS);
         pedestal_x_sq = make_cuda_malloc<uint64_t>(GAIN_MODES.size() * HM_PIXELS);
         reset_pedestal_buffers();
+        dev_bitshuffle_buffer_in = make_cuda_malloc<std::byte>(HM_PIXELS * 2);
+        dev_bitshuffle_buffer_out = make_cuda_malloc<std::byte>(HM_PIXELS * 2);
     }
     ~DataStreamHandler() {}
 
@@ -413,13 +416,15 @@ class DataStreamHandler {
     zmq::socket_t &send;
     std::unique_ptr<pixel_t[]> corrected_buffer =
         std::make_unique<pixel_t[]>(HM_PIXELS);
-    std::unique_ptr<std::byte[]> compression_buffer;
+    std::vector<std::byte> compression_buffer;
     // Accumulation buffers for calculating pedestals on-the-fly
     // Note: Because the value is max. 14-bit, we have worst-case 18-bits
     // of count before 32-bit saturation, so n is 32-bit to cover this.
     std::shared_ptr<uint32_t[]> pedestal_n;
     std::shared_ptr<uint32_t[]> pedestal_x;
     std::shared_ptr<uint64_t[]> pedestal_x_sq;
+    std::shared_ptr<std::byte[]> dev_bitshuffle_buffer_in;
+    std::shared_ptr<std::byte[]> dev_bitshuffle_buffer_out;
 };
 
 #pragma region Validate Header
@@ -578,13 +583,24 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     // on the other end of the pipe
     // first 12 bytes are uint64_t BE array size and uint32_t BE block size
     // these are the precomputed values
-    uint64_t &uncompress_size = *reinterpret_cast<uint64_t *>(compression_buffer.get());
-    uint32_t &block_size = *reinterpret_cast<uint32_t *>(compression_buffer.get() + 8);
+    uint64_t &uncompress_size =
+        *reinterpret_cast<uint64_t *>(compression_buffer.data());
+    uint32_t &block_size = *reinterpret_cast<uint32_t *>(compression_buffer.data() + 8);
     uncompress_size = __builtin_bswap64(2 * 256 * 1024);
     block_size = __builtin_bswap32(8192);
 
-    auto size = bshuf_compress_lz4(
-        output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
+    launch_bitshuffle(output_buffer,
+                      output_buffer,
+                      dev_bitshuffle_buffer_in.get(),
+                      dev_bitshuffle_buffer_out.get());
+
+    auto size =
+        LZ4_compress_default(reinterpret_cast<char *>(output_buffer),
+                             reinterpret_cast<char *>(compression_buffer.data()) + 12,
+                             HM_PIXELS * 2,
+                             compression_buffer.size());
+    // auto size = bshuf_compress_lz4(
+    //     output_buffer, compression_buffer.get() + 12, HM_HEIGHT * HM_WIDTH, 2, 4096);
 
     zmq::multipart_t send_msgs;
     json send_header;
@@ -596,7 +612,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["expLength"] = header.expLength;
     send_header["acquisition"] = acquisition_number.load();
     send_msgs.push_back(zmq::message_t(send_header.dump()));
-    send_msgs.push_back(zmq::message_t(compression_buffer.get(), size + 12));
+    send_msgs.push_back(zmq::message_t(compression_buffer.data(), size + 12));
     zmq::send_multipart(send, send_msgs);
 }
 
