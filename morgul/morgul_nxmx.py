@@ -371,7 +371,7 @@ class JF1MD:
 
         y_offsets = np.cumsum([0, 4, GAP_SLOW, 4])
         for row, offset in enumerate(y_offsets):
-            source_filename = Path(self.modules[(row, 0)].filename).resolve()
+            source_filename = Path(self.modules[(3 - row, 0)].filename).resolve()
             source = h5py.VirtualSource(
                 source_filename, "data", shape=(frames, 256, 1024)
             )
@@ -443,7 +443,7 @@ def nxmx(
     detector_distance = pint.Quantity(66, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
-    beam_center_sf_px = (-552, 520)
+    beam_center_sf_px = (552, 520)
     beam_center_sf_mm = tuple((x * pixel_size).to("m") for x in beam_center_sf_px)
 
     detector = NXdetector(
@@ -472,7 +472,7 @@ def nxmx(
                     pixel_size,
                     transformation_type="translation",
                     offset=(0, 0, 0),
-                    vector=(0, 1, 0),
+                    vector=(0, -1, 0),
                     depends_on="/entry/instrument/detector/module/module_offset",
                 ),
                 module_offset=AttrTransformation(

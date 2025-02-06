@@ -8,15 +8,17 @@ __global__ void jungfrau_image_corrections(GainData::GainModePointers gains,
                                            float energy_kev) {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
+    int invert_y = HM_HEIGHT - 1 - y;
     int index = y * HM_WIDTH + x;
+    int invert_index = invert_y * HM_WIDTH + x;
     int gain_mode = halfmodule_data[index] >> 14;
     float value = halfmodule_data[index] & 0x3fff;
     if (gain_mode == 3) {
         gain_mode = 2;
     }
 
-    out_corrected_data[index] = rintf((value - pedestals[gain_mode][index])
-                                      / (gains[gain_mode][index] * energy_kev));
+    out_corrected_data[invert_index] = rintf((value - pedestals[gain_mode][index])
+                                             / (gains[gain_mode][index] * energy_kev));
 }
 
 __global__ void jungfrau_pedestal_accumulate(const uint16_t *halfmodule_data,
