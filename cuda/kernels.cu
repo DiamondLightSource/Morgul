@@ -29,20 +29,17 @@ __global__ void jungfrau_pedestal_accumulate(const uint16_t *halfmodule_data,
     int index = y * HM_WIDTH + x;
     int gain_mode = halfmodule_data[index] >> 14;
     int value = halfmodule_data[index] & 0x3fff;
-    // if (expected_gain_mode && gain_mode = expected_gain_mode.value())
 
+    // If we have no data, ignore this entry (e.g. do not count the zero
+    // towards the average). Sometimes when turning the detector on,
+    // it has a run of zeros before returning meaningful data.
+    if (halfmodule_data[index] == 0) {
+        return;
+    }
     if (gain_mode == 3) {
         gain_mode = 2;
     }
-    // // Let's be clever, and use live data to determine what the expected
-    // // gain mode is. We need this, because we don't want pixels that
-    // // get stuck in a different gain mode
-    // int votes[3];
-    // votes[0] = __popc(__ballot_sync(0xFFFFFFFF, gain_mode == 0));
-    // votes[1] = __popc(__ballot_sync(0xFFFFFFFF, gain_mode == 1));
-    // votes[2] = __popc(__ballot_sync(0xFFFFFFFF, gain_mode == 3));
-    // int winner_count = max(max(votes[0], votes[1]), votes[2]);
-    // if (votes[gain_mode] == winner_count) {
+
     if (gain_mode == expected_gain_mode) {
         auto gain_offset = index + HM_HEIGHT * HM_WIDTH * gain_mode;
         pedestals_n[gain_offset] += 1;
