@@ -362,7 +362,7 @@ class JF1MD:
 
         MOD_FAST = 1028
         MOD_SLOW = 512
-        GAP_SLOW = 36
+        GAP_SLOW = 40
 
         slow = (2 * MOD_SLOW) + GAP_SLOW
         fast = MOD_FAST
@@ -439,7 +439,7 @@ def nxmx(
     # detector_size = pint.Quantity(0.07995, "m")
     # max_pixels = 5760
     # size_s, size_f = source.run["header/detector_0_number_of_pixel"]
-    size_s, size_f = 1060, 1028
+    size_s, size_f = 1064, 1028
     detector_distance = pint.Quantity(66, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
