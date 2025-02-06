@@ -557,9 +557,9 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
         const auto ploops = header.dls.pedestal_loops.value();
         const auto pframes = header.dls.pedestal_frames.value();
 
-        int gain_mode = header.frameIndex >= ploops * pframes ? 2 : 1;
+        int gain_mode = header.frameIndex >= (ploops * pframes) ? 2 : 1;
 
-        if (header.frameIndex % (pframes - 1) != 0) {
+        if (header.frameIndex % pframes != (pframes - 1)) {
             // Only the Nframes-1-indexed images have the gain mode forced.
             gain_mode = 0;
         }
