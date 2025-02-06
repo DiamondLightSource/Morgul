@@ -330,12 +330,12 @@ class PedestalsLibrary {
                               pedestal_0.size_bytes(),
                               cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(dev_1.get(),
-                              pedestal_0.data(),
-                              pedestal_0.size_bytes(),
+                              pedestal_1.data(),
+                              pedestal_1.size_bytes(),
                               cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(dev_2.get(),
-                              pedestal_0.data(),
-                              pedestal_0.size_bytes(),
+                              pedestal_2.data(),
+                              pedestal_2.size_bytes(),
                               cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaDeviceSynchronize());
 
