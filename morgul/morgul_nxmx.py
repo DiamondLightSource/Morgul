@@ -439,7 +439,7 @@ def nxmx(
     # detector_size = pint.Quantity(0.07995, "m")
     # max_pixels = 5760
     # size_s, size_f = source.run["header/detector_0_number_of_pixel"]
-    size_s, size_f = 1066, 1030
+    size_s, size_f = 1060, 1028
     detector_distance = pint.Quantity(63.5, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
