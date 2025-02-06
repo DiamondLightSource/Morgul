@@ -244,6 +244,7 @@ class NXdetector(NXobject):
     x_pixel_size: pint.Quantity | None = None
     y_pixel_size: pint.Quantity | None = None
     distance: pint.Quantity | None = None
+    saturation_value: float | None = None
 
     detector_module: dict[str, NXdetector_module] = {}
 
@@ -455,6 +456,7 @@ def nxmx(
         sensor_material="Si",
         sensor_thickness=pint.Quantity(320, "microns"),
         distance=detector_distance,
+        saturation_value=12000,
         detector_module={
             "module": NXdetector_module(
                 data_origin=(0, 0),
