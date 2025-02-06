@@ -12,6 +12,7 @@ general.
 import copy
 import datetime
 import json
+import sys
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, Type, TypeVar
 
@@ -26,6 +27,7 @@ from pydantic import BaseModel, Field
 T = TypeVar("T")
 
 BOLD = "\033[1m"
+ERR = "\033[1;31m"
 NC = "\033[0m"
 
 
@@ -244,6 +246,7 @@ class NXdetector(NXobject):
     x_pixel_size: pint.Quantity | None = None
     y_pixel_size: pint.Quantity | None = None
     distance: pint.Quantity | None = None
+    saturation_value: float | None = None
 
     detector_module: dict[str, NXdetector_module] = {}
 
@@ -387,23 +390,12 @@ def nxmx(
     input: Annotated[list[Path], typer.Argument()],
     output: Annotated[Path, typer.Option("-o", "--output")] = Path("output.h5"),
     energy: Annotated[
-        float, typer.Option("-e", "--energy", help="Energy of the beam, in keV")
-    ] = 12.4,
+        float | None, typer.Option("-e", "--energy", help="Energy of the beam, in keV")
+    ] = None,
     rotation_angle: Annotated[float | None, typer.Option("--rotation")] = None,
 ):
     """Create an NXmx Nexus file pointing to corrected Jungfrau data."""
-    # parser = ArgumentParser(description="Convert PAL Rayonix H5 file to nexus")
-    # parser.add_argument(
-    #     "-o",
-    #     "--output",
-    #     help="destination file to write",
-    #     default=Path("output.h5"),
-    #     type=Path,
-    # )
-    # parser.add_argument(
-    #     "input", help="Input h5 file to reference", type=Path, nargs="+"
-    # )
-    # args = parser.parse_args()
+
     print(f"Reading {BOLD}{input}{NC}")
 
     ep_file = Path(input[0]).parent / "experiment_params.json"
@@ -411,6 +403,15 @@ def nxmx(
     if ep_file.exists():
         ep = json.loads(ep_file.read_bytes())
         rotation_angle = ep["image_width_deg"]
+
+    cp_file = Path(input[0]).parent / "collection_info.json"
+    if cp_file.exists():
+        cp = json.loads(cp_file.read_bytes())
+        energy = 12.39841984055037 / cp["wavelength"]
+    elif energy is None:
+        sys.exit(
+            f"{ERR}Error: No collection_info.json file alongside h5, so you must pass energy{NC}"
+        )
 
     source = JF1MD(input)
     # if args.input.resolve().parent == args.output.resolve().parent:
@@ -438,11 +439,11 @@ def nxmx(
     # detector_size = pint.Quantity(0.07995, "m")
     # max_pixels = 5760
     # size_s, size_f = source.run["header/detector_0_number_of_pixel"]
-    size_s, size_f = 1066, 1030
-    detector_distance = pint.Quantity(63.5, "mm")
+    size_s, size_f = 1060, 1028
+    detector_distance = pint.Quantity(66, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
-    beam_center_sf_px = (543.5, 551.3)
+    beam_center_sf_px = (-552, 520)
     beam_center_sf_mm = tuple((x * pixel_size).to("m") for x in beam_center_sf_px)
 
     detector = NXdetector(
@@ -455,6 +456,7 @@ def nxmx(
         sensor_material="Si",
         sensor_thickness=pint.Quantity(320, "microns"),
         distance=detector_distance,
+        saturation_value=12000,
         detector_module={
             "module": NXdetector_module(
                 data_origin=(0, 0),
@@ -470,7 +472,7 @@ def nxmx(
                     pixel_size,
                     transformation_type="translation",
                     offset=(0, 0, 0),
-                    vector=(0, -1, 0),
+                    vector=(0, 1, 0),
                     depends_on="/entry/instrument/detector/module/module_offset",
                 ),
                 module_offset=AttrTransformation(
