@@ -443,7 +443,7 @@ def nxmx(
     detector_distance = pint.Quantity(63.5, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
-    beam_center_sf_px = (543.5, 551.3)
+    beam_center_sf_px = (-552, 520)
     beam_center_sf_mm = tuple((x * pixel_size).to("m") for x in beam_center_sf_px)
 
     detector = NXdetector(
@@ -472,7 +472,7 @@ def nxmx(
                     pixel_size,
                     transformation_type="translation",
                     offset=(0, 0, 0),
-                    vector=(0, -1, 0),
+                    vector=(0, 1, 0),
                     depends_on="/entry/instrument/detector/module/module_offset",
                 ),
                 module_offset=AttrTransformation(
