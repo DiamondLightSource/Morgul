@@ -278,8 +278,8 @@ class PedestalsLibrary {
                 auto space = H5Cleanup<H5Sclose>(H5Screate_simple(2, dims, nullptr));
                 for (auto [gain, pedestal_data] : hm_gains) {
                     auto ds_name = fmt::format("pedestal_{}", gain);
-                    CUDA_CHECK(cudaMemcpy(pedestal_data.get(),
-                                          pedestal_host.data(),
+                    CUDA_CHECK(cudaMemcpy(pedestal_host.data(),
+                                          pedestal_data.get(),
                                           HM_PIXELS * sizeof(pedestal_t),
                                           cudaMemcpyDeviceToHost));
                     CUDA_CHECK(cudaDeviceSynchronize());
