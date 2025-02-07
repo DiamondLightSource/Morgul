@@ -41,8 +41,13 @@ for i, file in enumerate(files):
         # if y % 50 == 0:
         #     print(file.filename, y)
         for x in range(data.shape[1]):
+            rx = x
+            ry = y
             if 0 <= data[y, x] < 1000:
-                col_data[y, x, i] = 255
+                if i > 0:
+                    rx += 1
+                    ry += 1
+                col_data[ry, rx, i] = 255
             # if y == 1 and x < 20:
             #     print(y, x, data[y,x], col_data[y,x])
 
