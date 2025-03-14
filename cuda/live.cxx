@@ -33,8 +33,10 @@ using json = nlohmann::json;
 using namespace std::chrono_literals;
 
 /// Location of some pedestal data to load. Make this automatic/specifiable later
+// const auto PEDESTAL_DATA = std::filesystem::path{
+//     "/scratch/nickd/PEDESTALS/jf1md_0.5ms_2024-10-03_12-42-49_pedestal.h5"};
 const auto PEDESTAL_DATA = std::filesystem::path{
-    "/scratch/nickd/PEDESTALS/jf1md_0.5ms_2024-10-03_12-42-49_pedestal.h5"};
+    "/scratch/nickd/PEDESTALS/jf9m-sim_1.9ms_2025-03-14_11-48-00.h5"};
 
 std::stop_source global_stop;
 

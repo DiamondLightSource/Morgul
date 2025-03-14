@@ -13,6 +13,8 @@ f = h5py.File("pedestal.h5", "w")
 
 string_dt = h5py.string_dtype()
 module_mode = f.create_dataset("module_mode", (), dtype=string_dt, data="half")
+exptime = f.create_dataset("exptime", (), dtype=np.double, data=0.001)
+exptime.attrs["units"] = "s"
 
 # Load each module
 for hmi in range(32):
