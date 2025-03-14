@@ -25,17 +25,42 @@ using pixel_t = uint16_t;
 
 #ifndef OLD_CUDA
 constexpr static Detector JF1M{"JF1M"};
+constexpr static Detector JF9M_SIM{"JF9M-SIM"};
 
 /// Maps detector name to known module names and positions
 const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
-    {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}}};
+    {{JF1M, {{"M420", {0, 0}}, {"M418", {0, 1}}}},
+     {JF9M_SIM,
+      {
+          {"M00", {0, 0}},
+          {"M01", {0, 1}},
+          {"M02", {0, 2}},
+          {"M03", {0, 3}},
+          {"M04", {0, 4}},
+          {"M05", {0, 5}},
+          {"M10", {1, 0}},
+          {"M11", {1, 1}},
+          {"M12", {1, 2}},
+          {"M13", {1, 3}},
+          {"M14", {1, 4}},
+          {"M15", {1, 5}},
+          {"M20", {2, 0}},
+          {"M21", {2, 1}},
+          {"M22", {2, 2}},
+          {"M23", {2, 3}},
+          {"M24", {2, 4}},
+          {"M25", {2, 5}},
+      }}};
 
 /// Size of detector, in (columns, rows)
-const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}}};
+const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}},
+                                                                {JF9M_SIM, {3, 6}}};
 
 static const std::string JF1M_Display{
     "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m1\e[39m\e[38;5;93mM\e["
     "39m\e[38;5;33m\e[39m\e[0m\n"};
+
+static const std::string JF9M_SIM_Display{"JF9M-SIM"};
 
 #endif
 
