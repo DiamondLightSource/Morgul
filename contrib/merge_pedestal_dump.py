@@ -17,7 +17,7 @@ exptime = f.create_dataset("exptime", (), dtype=np.double, data=0.001)
 exptime.attrs["units"] = "s"
 
 # Load each module
-for hmi in range(32):
+for hmi in range(36):
     group = f.create_group(f"hmi_{hmi:02d}")
     for gain in range(3):
         raw_data = Path(f"/dev/shm/half-module-ped{gain}-{hmi:02d}.dat").read_bytes()
