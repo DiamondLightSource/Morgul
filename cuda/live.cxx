@@ -247,8 +247,10 @@ class PedestalsLibrary {
     }
 
   public:
-    typedef float pedestal_t;
-    using GainModePointers = std::array<pedestal_t *, GAIN_MODES.size()>;
+    // typedef float pedestal_t;
+    using pedestal_t = PedestalData::pedestal_t;
+
+    // using GainModePointers = std::array<pedestal_t *, GAIN_MODES.size()>;
 
     PedestalsLibrary(Detector detector) : _detector(detector) {
         assert(detector == JF1M);
@@ -264,9 +266,9 @@ class PedestalsLibrary {
                && _gains.at(exposure_ns).contains(halfmodule_index);
     }
     auto get_gpu_ptrs(uint64_t exposure_ns, uint8_t halfmodule_index) const
-        -> GainModePointers {
+        -> PedestalData::GainModePointers {
         auto &lookup = _gains.at(exposure_ns).at(halfmodule_index);
-        return {lookup.at(0).get(), lookup.at(1).get(), lookup.at(2).get()};
+        return {lookup.at(0), lookup.at(1), lookup.at(2)};
     }
 
     void save_pedestals() {
@@ -291,10 +293,11 @@ class PedestalsLibrary {
                 auto space = H5Cleanup<H5Sclose>(H5Screate_simple(2, dims, nullptr));
                 for (auto [gain, pedestal_data] : hm_gains) {
                     auto ds_name = fmt::format("pedestal_{}", gain);
-                    CUDA_CHECK(cudaMemcpy(pedestal_host.data(),
-                                          pedestal_data.get(),
-                                          HM_PIXELS * sizeof(pedestal_t),
-                                          cudaMemcpyDeviceToHost));
+                    cudaMemcpy(pedestal_host.data(), pedestal_data, HM_PIXELS);
+                    // CUDA_CHECK(cudaMemcpy(pedestal_host.data(),
+                    //                       pedestal_data.get(),
+                    //                       HM_PIXELS * sizeof(pedestal_t),
+                    //                       cudaMemcpyDeviceToHost));
                     CUDA_CHECK(cudaDeviceSynchronize());
                     auto dset = H5Cleanup<H5Dclose>(H5Dcreate(hm_group,
                                                               ds_name.c_str(),
@@ -338,18 +341,22 @@ class PedestalsLibrary {
         assert(pedestal_0.size() == HM_PIXELS);
         assert(pedestal_1.size() == HM_PIXELS);
         assert(pedestal_2.size() == HM_PIXELS);
-        CUDA_CHECK(cudaMemcpy(dev_0.get(),
-                              pedestal_0.data(),
-                              pedestal_0.size_bytes(),
-                              cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(dev_1.get(),
-                              pedestal_1.data(),
-                              pedestal_1.size_bytes(),
-                              cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(dev_2.get(),
-                              pedestal_2.data(),
-                              pedestal_2.size_bytes(),
-                              cudaMemcpyHostToDevice));
+        cudaMemcpy(dev_0, pedestal_0.data(), pedestal_0.size());
+        cudaMemcpy(dev_1, pedestal_1.data(), pedestal_1.size());
+        cudaMemcpy(dev_2, pedestal_2.data(), pedestal_2.size());
+
+        // CUDA_CHECK(cudaMemcpy(dev_0.get(),
+        //                       pedestal_0.data(),
+        //                       pedestal_0.size_bytes(),
+        //                       cudaMemcpyHostToDevice));
+        // CUDA_CHECK(cudaMemcpy(dev_1.get(),
+        //                       pedestal_1.data(),
+        //                       pedestal_1.size_bytes(),
+        //                       cudaMemcpyHostToDevice));
+        // CUDA_CHECK(cudaMemcpy(dev_2.get(),
+        //                       pedestal_2.data(),
+        //                       pedestal_2.size_bytes(),
+        //                       cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaDeviceSynchronize());
 
         print(
@@ -358,7 +365,7 @@ class PedestalsLibrary {
 
   private:
     std::map<uint64_t,
-             std::map<uint8_t, std::map<uint8_t, std::shared_ptr<pedestal_t[]>>>>
+             std::map<uint8_t, std::map<uint8_t, shared_device_ptr<pedestal_t[]>>>>
         _gains;
     const Detector _detector;
     std::mutex _write_guard;
@@ -419,12 +426,9 @@ class DataStreamHandler {
 
   private:
     void reset_pedestal_buffers() {
-        CUDA_CHECK(cudaMemset(
-            pedestal_n.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));
-        CUDA_CHECK(cudaMemset(
-            pedestal_x.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));
-        CUDA_CHECK(cudaMemset(
-            pedestal_x_sq.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint64_t)));
+        cudaMemset(pedestal_n, 0, GAIN_MODES.size() * HM_PIXELS);
+        cudaMemset(pedestal_x, 0, GAIN_MODES.size() * HM_PIXELS);
+        cudaMemset(pedestal_x_sq, 0, GAIN_MODES.size() * HM_PIXELS);
         CUDA_CHECK(cudaDeviceSynchronize());
     }
 
@@ -441,11 +445,11 @@ class DataStreamHandler {
     // Accumulation buffers for calculating pedestals on-the-fly
     // Note: Because the value is max. 14-bit, we have worst-case 18-bits
     // of count before 32-bit saturation, so n is 32-bit to cover this.
-    std::shared_ptr<uint32_t[]> pedestal_n;
-    std::shared_ptr<uint32_t[]> pedestal_x;
-    std::shared_ptr<uint64_t[]> pedestal_x_sq;
-    std::shared_ptr<std::byte[]> dev_bitshuffle_buffer_in;
-    std::shared_ptr<std::byte[]> dev_bitshuffle_buffer_out;
+    shared_device_ptr<uint32_t[]> pedestal_n;
+    shared_device_ptr<uint32_t[]> pedestal_x;
+    shared_device_ptr<uint64_t[]> pedestal_x_sq;
+    shared_device_ptr<std::byte[]> dev_bitshuffle_buffer_in;
+    shared_device_ptr<std::byte[]> dev_bitshuffle_buffer_out;
 };
 
 #pragma region Validate Header

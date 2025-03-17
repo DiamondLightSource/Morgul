@@ -309,6 +309,25 @@ void cudaMemcpy(shared_device_ptr<T> dst,
                           sizeof(typename shared_device_ptr<T>::element_type) * count,
                           cudaMemcpyHostToDevice));
 }
+
+template <typename T>
+void cudaMemcpy(const std::remove_extent_t<T> *dst,
+                shared_device_ptr<T> source,
+                size_t count) {
+    CUDA_CHECK(cudaMemcpy(dst,
+                          source.ptr.get(),
+                          sizeof(typename shared_device_ptr<T>::element_type) * count,
+                          cudaMemcpyDeviceToHost));
+}
+
+template <typename T>
+void cudaMemset(shared_device_ptr<T> dst, int value, size_t count) {
+    CUDA_CHECK(cudaMemset(
+        dst.get(), value, count * sizeof(shared_device_ptr<T>::element_type)));
+}
+// CUDA_CHECK(cudaMemset(
+//     pedestal_n.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));
+
 // CUDA_CHECK(cudaMemcpy(ptr,
 //     data.data().data(),
 //     sizeof(pedestal_t) * HM_WIDTH * HM_HEIGHT,

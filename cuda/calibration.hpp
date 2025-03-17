@@ -27,9 +27,8 @@ enum class ModuleMode {
 auto module_mode_from(std::string_view value) -> ModuleMode;
 
 class PedestalData {
-    typedef float pedestal_t;
-
   public:
+    using pedestal_t = float;
     using GainModePointers =
         std::array<shared_device_ptr<pedestal_t[]>, GAIN_MODES.size()>;
     PedestalData(std::filesystem::path path, Detector detector);
