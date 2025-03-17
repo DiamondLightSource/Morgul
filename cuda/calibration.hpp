@@ -83,7 +83,7 @@ class PedestalData {
 class GainData {
   public:
     using gain_t = double;
-    using GainModePointers = std::array<gain_t*, GAIN_MODES.size()>;
+    using GainModePointers = std::array<shared_device_ptr<gain_t[]>, GAIN_MODES.size()>;
 
     GainData(std::filesystem::path path, Detector detector);
     void upload();
@@ -97,7 +97,6 @@ class GainData {
     }
 
   private:
-    std::shared_ptr<gain_t[]> _gpu_data;
     std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     std::map<size_t, std::map<uint8_t, Array2D<gain_t>>> _modules;

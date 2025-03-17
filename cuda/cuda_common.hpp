@@ -16,14 +16,13 @@
 
 #include "common.hpp"
 
-// template <typename T>
-// struct DevicePointer {
-//     using element_type = typename std::shared_ptr<T>::element_type;
+template <typename T>
+class shared_device_ptr;
 
-//   protected:
-//     DevicePointer
-//     element_type *ptr;
-// };
+template <typename T>
+void cudaMemcpy(shared_device_ptr<T> dst,
+                const std::remove_extent_t<T> *source,
+                size_t count);
 
 template <typename T>
 class shared_device_ptr {
@@ -32,7 +31,7 @@ class shared_device_ptr {
 
     shared_device_ptr() {}
 
-    explicit shared_device_ptr(std::shared_ptr<T> pointer) : ptr(pointer) {}
+    // explicit shared_device_ptr(std::shared_ptr<T> pointer) : ptr(pointer) {}
 
     template <typename Deleter>
     explicit shared_device_ptr(element_type *pointer, Deleter deleter)
@@ -54,6 +53,10 @@ class shared_device_ptr {
 
   private:
     std::shared_ptr<T> ptr;
+
+    friend void cudaMemcpy<T>(shared_device_ptr<T>,
+                              const std::remove_extent_t<T> *,
+                              size_t);
 };
 
 class cuda_error : public std::runtime_error {
@@ -301,8 +304,10 @@ template <typename T>
 void cudaMemcpy(shared_device_ptr<T> dst,
                 const std::remove_extent_t<T> *source,
                 size_t count) {
-    CUDA_CHECK(
-        cudaMemcpy(dst.ptr.get(), source, sizeof(T) * count, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dst.ptr.get(),
+                          source,
+                          sizeof(typename shared_device_ptr<T>::element_type) * count,
+                          cudaMemcpyHostToDevice));
 }
 // CUDA_CHECK(cudaMemcpy(ptr,
 //     data.data().data(),
