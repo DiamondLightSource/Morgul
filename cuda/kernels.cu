@@ -162,8 +162,8 @@ void launch_bitshuffle(cudaStream_t stream,
                        shared_device_ptr<std::byte[]> d_out) {
     const dim3 block(1024);
     const dim3 grid(64);
-    cudaMemcpy(d_in, in, 256 * 1024 * sizeof(uint16_t));
+    cudaMemcpy(d_in, static_cast<std::byte *>(in), 256 * 1024 * sizeof(uint16_t));
     bitshuffle<<<grid, block, 0, stream>>>(static_cast<const uint8_t *>(d_in.get()),
-                                           static_cast<uint8_t *>(d_out));
+                                           static_cast<uint8_t *>(d_out.get()));
     cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t));
 }

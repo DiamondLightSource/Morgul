@@ -6,7 +6,6 @@
 #include <lodepng.h>
 
 #include <algorithm>
-#include <argparse/argparse.hpp>
 #include <cinttypes>
 #include <filesystem>
 #include <fstream>
@@ -63,7 +62,7 @@ class shared_device_ptr {
     /// This is an attempt to make it very hard to misuse - CUDA-buikt
     /// translation units should be the only ones that are allowed to
     /// read the raw pointer.
-    element_type *get() {
+    element_type *get() const {
         return ptr.get();
     }
 #endif
@@ -107,6 +106,9 @@ inline auto cuda_throw_error() -> void {
         throw cuda_error(cuda_error_string(err));
     }
 }
+#ifndef __NVCC__
+
+#include <argparse/argparse.hpp>
 
 class CUDAArgumentParser;
 
@@ -259,6 +261,8 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
   private:
     CUDAArguments _arguments{};
 };
+
+#endif
 
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
