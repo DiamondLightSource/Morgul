@@ -9,6 +9,7 @@
 
 #include "array2d.hpp"
 #include "constants.hpp"
+#include "cuda_common.hpp"
 
 struct CalibrationDataPath {
     std::filesystem::path pedestal;
@@ -29,7 +30,8 @@ class PedestalData {
     typedef float pedestal_t;
 
   public:
-    using GainModePointers = std::array<pedestal_t*, GAIN_MODES.size()>;
+    using GainModePointers =
+        std::array<shared_device_ptr<pedestal_t[]>, GAIN_MODES.size()>;
     PedestalData(std::filesystem::path path, Detector detector);
     auto get_pedestal(size_t halfmodule_index, uint8_t gain_mode) const
         -> const Array2D<pedestal_t>& {
@@ -47,7 +49,7 @@ class PedestalData {
     }
 
   private:
-    std::shared_ptr<pedestal_t[]> _gpu_data;
+    // shared_device_ptr<pedestal_t[]> _gpu_data;
     std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     ModuleMode _module_mode;

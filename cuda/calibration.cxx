@@ -193,11 +193,24 @@ auto PedestalData::upload() -> void {
         print(style::error, "Error: Only support GPU upload on halfmodule pedestals");
         std::exit(1);
     }
-    auto [ptr, pitch] = make_cuda_pitched_malloc<pedestal_t>(
-        HM_WIDTH, HM_HEIGHT * num_modules * GAIN_MODES.size());
-    _gpu_data = ptr;
-    _gpu_pitch = pitch;
 
+    // Copy each halfmodules gain modes into device memory
+    for (const auto &[hmi, gain_modes] : _modules) {
+        GainModePointers dev;
+        for (auto i : std::ranges::views::iota(GAIN_MODES.size())) {
+            auto [ptr, pitch] =
+                make_cuda_pitched_malloc<pedestal_t>(HM_WIDTH, HM_HEIGHT);
+            dev[i] = ptr;
+            _gpu_pitch = pitch;
+
+            auto &data = gain_modes.at(GAIN_MODES[i]);
+            assert(HM_WIDTH == data.width());
+            assert(HM_HEIGHT == data.height());
+            assert(1024 == data.stride());
+            cudaMemcpy(dev[i], data.data().data(), HM_HEIGHT * HM_WIDTH);
+        }
+        _gpu_modules[hmi] = dev;
+    }
     // We can avoid carrying round pitch if we know the pitched array is unpadded
     if (_gpu_pitch != 1024) {
         print(style::error,
@@ -205,24 +218,6 @@ auto PedestalData::upload() -> void {
               "{}.",
               _gpu_pitch);
         std::exit(1);
-    }
-    // Copy each halfmodules gain modes into device memory
-    pedestal_t *target_ptr = _gpu_data.get();
-    for (const auto &[hmi, gain_modes] : _modules) {
-        GainModePointers dev_ptrs;
-        for (int i = 0; i < GAIN_MODES.size(); ++i) {
-            dev_ptrs[i] = target_ptr;
-            auto &data = gain_modes.at(GAIN_MODES[i]);
-            assert(HM_WIDTH == data.width());
-            assert(HM_HEIGHT == data.height());
-            assert(1024 == data.stride());
-            CUDA_CHECK(cudaMemcpy(target_ptr,
-                                  data.data().data(),
-                                  sizeof(pedestal_t) * HM_WIDTH * HM_HEIGHT,
-                                  cudaMemcpyHostToDevice));
-            target_ptr += HM_HEIGHT * HM_WIDTH;
-        }
-        _gpu_modules[hmi] = dev_ptrs;
     }
 }
 
@@ -304,10 +299,21 @@ GainData::GainData(std::filesystem::path path, Detector detector) : _path(path) 
 auto GainData::upload() -> void {
     size_t num_modules = _modules.size() * GAIN_MODES.size();
 
-    auto [ptr, pitch] =
-        make_cuda_pitched_malloc<gain_t>(HM_WIDTH, HM_HEIGHT * num_modules);
-    _gpu_data = ptr;
-    _gpu_pitch = pitch;
+    for (const auto &[hmi, gain_modes] : _modules) {
+        GainModePointers dev;
+        for (auto i : std::ranges::views::iota(GAIN_MODES.size())) {
+            auto [ptr, pitch] = make_cuda_pitched_malloc<gain_t>(HM_WIDTH, HM_HEIGHT);
+            dev[i] = ptr;
+            _gpu_pitch = pitch;
+
+            auto &data = gain_modes.at(GAIN_MODES[i]);
+            assert(HM_WIDTH == data.width());
+            assert(HM_HEIGHT == data.height());
+            assert(1024 == data.stride());
+            cudaMemcpy(dev[i], data.data().data(), HM_HEIGHT * HM_WIDTH);
+        }
+        _gpu_modules[hmi] = dev;
+    }
 
     // We can avoid carrying round pitch if we know the pitched array is unpadded
     if (_gpu_pitch != 1024) {
@@ -316,23 +322,5 @@ auto GainData::upload() -> void {
               "{}.",
               _gpu_pitch);
         std::exit(1);
-    }
-    // Copy each halfmodules gain modes into device memory
-    gain_t *target_ptr = _gpu_data.get();
-    for (const auto &[hmi, gain_modes] : _modules) {
-        GainModePointers dev_ptrs;
-        for (int i = 0; i < GAIN_MODES.size(); ++i) {
-            dev_ptrs[i] = target_ptr;
-            auto &data = gain_modes.at(GAIN_MODES[i]);
-            assert(HM_WIDTH == data.width());
-            assert(HM_HEIGHT == data.height());
-            assert(1024 == data.stride());
-            CUDA_CHECK(cudaMemcpy(target_ptr,
-                                  data.data().data(),
-                                  sizeof(gain_t) * HM_WIDTH * HM_HEIGHT,
-                                  cudaMemcpyHostToDevice));
-            target_ptr += HM_HEIGHT * HM_WIDTH;
-        }
-        _gpu_modules[hmi] = dev_ptrs;
     }
 }

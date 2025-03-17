@@ -37,13 +37,19 @@ class shared_device_ptr {
     template <typename Deleter>
     explicit shared_device_ptr(element_type *pointer, Deleter deleter)
         : ptr(pointer, deleter) {}
-    shared_device_ptr(const shared_device_ptr<T> &source) : ptr(source.ptr) {}
+    shared_device_ptr(const shared_device_ptr<T> &) = default;
+    // shared_device_ptr(const shared_device_ptr<T> &source) : ptr(source.ptr) {}
+    // shared_device_ptr(const shared_device_ptr<T[]> &source) : ptr(source.ptr.get()) {}
     shared_device_ptr(shared_device_ptr<T> &&source) {
         ptr = source.ptr;
         source.ptr.reset();
     }
     element_type &operator[](std::ptrdiff_t idx) const {
         return ptr[idx];
+    }
+    auto operator=(const shared_device_ptr<T> &other) -> shared_device_ptr<T> & {
+        ptr = other.ptr;
+        return *this;
     }
 
   private:
@@ -290,6 +296,18 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
 
     return std::make_pair(shared_device_ptr<T[]>(obj, deleter), pitch / sizeof(T));
 }
+
+template <typename T>
+void cudaMemcpy(shared_device_ptr<T> dst,
+                const std::remove_extent_t<T> *source,
+                size_t count) {
+    CUDA_CHECK(
+        cudaMemcpy(dst.ptr.get(), source, sizeof(T) * count, cudaMemcpyHostToDevice));
+}
+// CUDA_CHECK(cudaMemcpy(ptr,
+//     data.data().data(),
+//     sizeof(pedestal_t) * HM_WIDTH * HM_HEIGHT,
+//     cudaMemcpyHostToDevice));
 
 class CudaStream {
     cudaStream_t _stream;
