@@ -38,23 +38,23 @@ const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETE
           {"SIM_M03", {0, 3}},
           {"SIM_M04", {0, 4}},
           {"SIM_M05", {0, 5}},
-          {"SIM_M10", {1, 0}},
-          {"SIM_M11", {1, 1}},
-          {"SIM_M12", {1, 2}},
-          {"SIM_M13", {1, 3}},
-          {"SIM_M14", {1, 4}},
-          {"SIM_M15", {1, 5}},
-          {"SIM_M20", {2, 0}},
-          {"SIM_M21", {2, 1}},
-          {"SIM_M22", {2, 2}},
-          {"SIM_M23", {2, 3}},
-          {"SIM_M24", {2, 4}},
-          {"SIM_M25", {2, 5}},
+          {"SIM_M10", {0, 6}},
+          {"SIM_M11", {0, 7}},
+          {"SIM_M12", {0, 8}},
+          {"SIM_M13", {0, 9}},
+          {"SIM_M14", {0, 10}},
+          {"SIM_M15", {0, 11}},
+          {"SIM_M20", {0, 12}},
+          {"SIM_M21", {0, 13}},
+          {"SIM_M22", {0, 14}},
+          {"SIM_M23", {0, 15}},
+          {"SIM_M24", {0, 16}},
+          {"SIM_M25", {0, 17}},
       }}};
 
 /// Size of detector, in (columns, rows)
 const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}},
-                                                                {JF9M_SIM, {3, 6}}};
+                                                                {JF9M_SIM, {1, 18}}};
 
 static const std::string JF1M_Display{
     "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m1\e[39m\e[38;5;93mM\e["
