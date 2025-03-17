@@ -75,6 +75,20 @@ int spinner(const std::string_view &message) {
     return msg.size();
 }
 
+class Timer {
+  public:
+    Timer() : start(std::chrono::high_resolution_clock::now()) {}
+
+    auto get_elapsed_seconds() -> double {
+        std::chrono::duration<double, std::milli> dt =
+            std::chrono::high_resolution_clock::now() - start;
+        return dt.count() / 1000.0;
+    }
+
+  private:
+    std::chrono::high_resolution_clock::time_point start;
+};
+
 #pragma region Header Parsing
 
 struct DLSHeaderAdditions {
@@ -397,6 +411,12 @@ class DataStreamHandler {
     auto process_frame(const SLSHeader &header, std::span<uint16_t> &frame) -> void;
     auto end_acquisition() -> void;
 
+    double stats_lz4_time = 0;
+    double stats_process_frame_time = 0;
+    double stats_push = 0;
+    double stats_correct = 0;
+    double stats_bs = 0;
+
   private:
     void reset_pedestal_buffers() {
         CUDA_CHECK(cudaMemset(
@@ -542,6 +562,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
 #pragma region Process Frame
 auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       std::span<uint16_t> &frame) -> void {
+    auto time_frame = Timer();
     auto energy = header.dls.energy.value_or(12.4);
 
     pixel_t *output_buffer = nullptr;
@@ -570,6 +591,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                           pedestal_x_sq.get(),
                                           gain_mode);
     } else {
+        auto timer_corr = Timer();
         output_buffer = corrected_buffer.get();
         call_jungfrau_image_corrections(
             stream,
@@ -579,6 +601,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
             output_buffer,
             energy);
         CUDA_CHECK(cudaStreamSynchronize(stream));
+        stats_correct += timer_corr.get_elapsed_seconds();
     }
     // Construct the HDF5 header so that we can do direct chunk write
     // on the other end of the pipe
@@ -590,13 +613,16 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     uncompress_size = __builtin_bswap64(2 * 256 * 1024);
     block_size = __builtin_bswap32(8192);
 
+    auto timer_bs = Timer();
     launch_bitshuffle(stream,
                       output_buffer,
                       output_buffer,
                       dev_bitshuffle_buffer_in.get(),
                       dev_bitshuffle_buffer_out.get());
     CUDA_CHECK(cudaStreamSynchronize(stream));
+    stats_bs += timer_bs.get_elapsed_seconds();
 
+    auto time_lz4 = Timer();
     size_t current_index = 12;
     for (size_t block = 0; block < HM_PIXELS * 2 / 8192; ++block) {
         auto size = LZ4_compress_default(
@@ -609,6 +635,12 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
         block_size = __builtin_bswap32(size);
         current_index += size + 4;
     }
+    stats_lz4_time += time_lz4.get_elapsed_seconds();
+
+    // static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+    //                         )
+    //                         .count())
+    // / 1000.0;
 
     zmq::multipart_t send_msgs;
     json send_header;
@@ -621,7 +653,10 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["acquisition"] = acquisition_number.load();
     send_msgs.push_back(zmq::message_t(send_header.dump()));
     send_msgs.push_back(zmq::message_t(compression_buffer.data(), current_index));
+    auto time_push = Timer();
     zmq::send_multipart(send, send_msgs);
+    stats_push += time_push.get_elapsed_seconds();
+    stats_process_frame_time += time_frame.get_elapsed_seconds();
 }
 
 #pragma region End Acquisition
@@ -698,12 +733,21 @@ auto zmq_listen(std::stop_token stop,
         // Between acquisitions we wait as long as it takes
         sub.set(zmq::sockopt::rcvtimeo, -1);
         size_t num_frames_seen = 0;
+        double time_waiting = 0;
+        double time_frame = 0;
+        auto time_acq = std::optional<Timer>();
         // Loop over images within an acquisition
         while (!stop.stop_requested()) {
             std::vector<zmq::message_t> recv_msgs;
+            auto wait_time = Timer();
             ++threads_waiting;
             const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
             --threads_waiting;
+            if (!time_acq.has_value()) {
+                time_acq = {Timer()};
+            }
+            time_waiting += wait_time.get_elapsed_seconds();
+            auto frame_time = Timer();
             // All subsequent waits on this series of images can timeout
             sub.set(zmq::sockopt::rcvtimeo, static_cast<int>(args.zmq_timeout));
 
@@ -746,20 +790,35 @@ auto zmq_listen(std::stop_token stop,
                 reinterpret_cast<uint16_t *>(recv_msgs[1].data()),
                 recv_msgs[1].size() / 2};
             handler.process_frame(header, data);
+            time_frame += frame_time.get_elapsed_seconds();
         }
         bool was_pedestals = handler.is_pedestal_mode;
         handler.end_acquisition();
         // Now, wait until all frames have completed
         sync_barrier.arrive_and_wait();
+        print(
+            "{}: Time waiting for LZ4: {:.2f}S Process: {:.2f}S Push: {:.2f}S Frame: "
+            "{:.2f}S Wait: {:.2f}S Corr: {:.2f}S BS: {:.2f}S\n",
+            port,
+            handler.stats_lz4_time,
+            handler.stats_process_frame_time,
+            handler.stats_push,
+            time_frame,
+            time_waiting,
+            handler.stats_correct,
+            handler.stats_bs);
         // If we are the first port
         if (port == args.zmq_port) {
-            print("Acquisition {} complete\n", acquisition_number);
+            print("Acquisition {} complete in {:.2f}S\n",
+                  acquisition_number,
+                  time_acq.value().get_elapsed_seconds());
             ++acquisition_number;
             acq_progress = 0;
             if (was_pedestals) {
                 pedestals.save_pedestals();
             }
         }
+        time_acq = std::nullopt;
     }
 }
 
