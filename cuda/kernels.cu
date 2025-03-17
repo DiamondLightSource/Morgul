@@ -82,15 +82,18 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
 
 void call_jungfrau_pedestal_accumulate(cudaStream_t stream,
                                        const uint16_t *halfmodule_data,
-                                       uint32_t *pedestals_n,
-                                       uint32_t *pedestals_x,
-                                       uint64_t *pedestals_x_sq,
+                                       shared_device_ptr<uint32_t[]> pedestals_n,
+                                       shared_device_ptr<uint32_t[]> pedestals_x,
+                                       shared_device_ptr<uint64_t[]> pedestals_x_sq,
                                        int expected_gain_mode) {
     jungfrau_pedestal_accumulate<<<dim3(HM_WIDTH / 32, HM_HEIGHT / 32),
                                    dim3(32, 32),
                                    0,
-                                   stream>>>(
-        halfmodule_data, pedestals_n, pedestals_x, pedestals_x_sq, expected_gain_mode);
+                                   stream>>>(halfmodule_data,
+                                             pedestals_n.get(),
+                                             pedestals_x.get(),
+                                             pedestals_x_sq.get(),
+                                             expected_gain_mode);
 }
 void call_jungfrau_pedestal_finalize(cudaStream_t stream,
                                      const uint32_t *pedestals_n,

@@ -25,6 +25,9 @@ void cudaMemcpy(shared_device_ptr<T> dst,
                 size_t count);
 
 template <typename T>
+void cudaMemset(shared_device_ptr<T> dst, int value, size_t count);
+
+template <typename T>
 class shared_device_ptr {
   public:
     using element_type = typename std::shared_ptr<T>::element_type;
@@ -51,12 +54,23 @@ class shared_device_ptr {
         return *this;
     }
 
+#ifdef __NVCC__
+    /// @brief  Get the raw pointer, but only if building with CUDA
+    ///
+    /// This is an attempt to make it very hard to misuse - CUDA-buikt
+    /// translation units should be the only ones that are allowed to
+    /// read the raw pointer.
+    element_type *get() {
+        return ptr.get();
+    }
+#endif
   private:
     std::shared_ptr<T> ptr;
 
     friend void cudaMemcpy<T>(shared_device_ptr<T>,
                               const std::remove_extent_t<T> *,
                               size_t);
+    friend void cudaMemset<T>(shared_device_ptr<T> dst, int value, size_t count);
 };
 
 class cuda_error : public std::runtime_error {
@@ -311,8 +325,8 @@ void cudaMemcpy(shared_device_ptr<T> dst,
 }
 
 template <typename T>
-void cudaMemcpy(const std::remove_extent_t<T> *dst,
-                shared_device_ptr<T> source,
+void cudaMemcpy(std::remove_extent_t<T> *dst,
+                const shared_device_ptr<T> source,
                 size_t count) {
     CUDA_CHECK(cudaMemcpy(dst,
                           source.ptr.get(),
@@ -323,7 +337,7 @@ void cudaMemcpy(const std::remove_extent_t<T> *dst,
 template <typename T>
 void cudaMemset(shared_device_ptr<T> dst, int value, size_t count) {
     CUDA_CHECK(cudaMemset(
-        dst.get(), value, count * sizeof(shared_device_ptr<T>::element_type)));
+        dst.get(), value, count * sizeof(typename shared_device_ptr<T>::element_type)));
 }
 // CUDA_CHECK(cudaMemset(
 //     pedestal_n.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));

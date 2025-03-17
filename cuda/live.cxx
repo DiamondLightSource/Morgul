@@ -588,12 +588,8 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
             gain_mode = 0;
         }
 
-        call_jungfrau_pedestal_accumulate(stream,
-                                          frame.data(),
-                                          pedestal_n.get(),
-                                          pedestal_x.get(),
-                                          pedestal_x_sq.get(),
-                                          gain_mode);
+        call_jungfrau_pedestal_accumulate(
+            stream, frame.data(), pedestal_n, pedestal_x, pedestal_x_sq, gain_mode);
     } else {
         auto timer_corr = Timer();
         output_buffer = corrected_buffer.get();
