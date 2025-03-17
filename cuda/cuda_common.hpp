@@ -16,6 +16,15 @@
 
 #include "common.hpp"
 
+// template <typename T>
+// struct DevicePointer {
+//     using element_type = typename std::shared_ptr<T>::element_type;
+
+//   protected:
+//     DevicePointer
+//     element_type *ptr;
+// };
+
 template <typename T>
 class shared_device_ptr {
   public:
@@ -30,6 +39,7 @@ class shared_device_ptr {
         ptr = source.ptr;
         source.ptr.reset();
     }
+    // auto get() -> DevicePointer<T> {}
 
   private:
     std::shared_ptr<T> ptr;
