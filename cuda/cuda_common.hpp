@@ -16,6 +16,25 @@
 
 #include "common.hpp"
 
+template <typename T>
+class shared_device_ptr {
+  public:
+    using element_type = typename std::shared_ptr<T>::element_type;
+
+    explicit shared_device_ptr(std::shared_ptr<T> pointer) : ptr(pointer) {}
+
+    template <typename Deleter>
+    explicit shared_device_ptr(element_type *pointer, Deleter deleter)
+        : ptr(pointer, deleter) {}
+    shared_device_ptr(shared_device_ptr<T> &&source) {
+        ptr = source.ptr;
+        source.ptr.reset();
+    }
+
+  private:
+    std::shared_ptr<T> ptr;
+};
+
 class cuda_error : public std::runtime_error {
   public:
     using std::runtime_error::runtime_error;
@@ -209,7 +228,7 @@ auto make_cuda_malloc(size_t num_items = 1) {
             fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
-    return std::shared_ptr<Tb[]>(obj, deleter);
+    return shared_device_ptr<Tb[]>(obj, deleter);
 }
 
 template <typename T>
@@ -237,7 +256,7 @@ auto make_cuda_pinned_malloc(size_t num_items = 1) {
                                      cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
-    return std::shared_ptr<T[]>{obj, deleter};
+    return shared_device_ptr<T[]>{obj, deleter};
 }
 
 template <typename T>
@@ -254,7 +273,7 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
 
     auto deleter = [](T *ptr) { cudaFree(ptr); };
 
-    return std::make_pair(std::shared_ptr<T[]>(obj, deleter), pitch / sizeof(T));
+    return std::make_pair(shared_device_ptr<T[]>(obj, deleter), pitch / sizeof(T));
 }
 
 class CudaStream {
