@@ -8,11 +8,8 @@
 #     "zmq",
 # ]
 # ///
-import json
-import time
 from argparse import ArgumentParser
 
-import h5py
 import hdf5plugin  # noqa: F401
 import numpy
 import zmq
@@ -35,39 +32,44 @@ socket.connect(f"tcp://{host}:{port}")
 
 total = args.num_images
 
-fout = h5py.File(f"data_{port}.h5", "w")
+# fout = h5py.File(f"data_{port}.h5", "w")
 
-data = fout.create_dataset(
-    "data",
-    shape=(total, 256, 1024),
-    chunks=(1, 256, 1024),
-    dtype=numpy.uint16,
-    **compression,
-)
+# data = fout.create_dataset(
+#     "data",
+#     shape=(total, 256, 1024),
+#     chunks=(1, 256, 1024),
+#     dtype=numpy.uint16,
+#     **compression,
+# )
 
 timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
 
-try:
-    for count in range(total):
+# try:
+while True:
+    try:
         messages = socket.recv_multipart()
         socket.setsockopt(zmq.RCVTIMEO, 2000)
+    except zmq.Again:
+        print("Got timeout waiting for more images")
 
-        # header = json.loads(messages[0])
-        # frame = header["frameIndex"]
-        header = json.loads(messages[0])
-        frame = header["frameIndex"]
-        offset = (frame, 0, 0)
-        data.id.write_direct_chunk(offset, messages[1])
-        timestamp[frame] = time.time()
-        if count == 0:
-            with open(f"raw_{port}.dat", "wb") as f:
-                f.write(messages[1])
-except zmq.Again:
-    print("Got timeout waiting for more images")
-finally:
-    fout.create_dataset(
-        "timestamp", shape=(total,), data=timestamp, dtype=numpy.float64
-    )
+#     for count in range(total):
+#         messages = socket.recv_multipart()
+#         socket.setsockopt(zmq.RCVTIMEO, 2000)
 
-    fout.close()
-    print("Closed data file")
+#         # header = json.loads(messages[0])
+#         # frame = header["frameIndex"]
+#         # offset = (frame, 0, 0)
+#         # data.id.write_direct_chunk(offset, messages[1])
+#         # timestamp[frame] = time.time()
+#         # if count == 0:
+#         #     with open(f"raw_{port}.dat", "wb") as f:
+#         #         f.write(messages[1])
+# except zmq.Again:
+#     print("Got timeout waiting for more images")
+# finally:
+#     fout.create_dataset(
+#         "timestamp", shape=(total,), data=timestamp, dtype=numpy.float64
+#     )
+
+#     fout.close()
+#     print("Closed data file")
