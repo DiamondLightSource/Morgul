@@ -23,7 +23,10 @@ template <typename T>
 void cudaMemcpy(shared_device_ptr<T> dst,
                 const std::remove_extent_t<T> *source,
                 size_t count);
-
+template <typename T>
+void cudaMemcpy(std::remove_extent_t<T> *dst,
+                const shared_device_ptr<T> source,
+                size_t count);
 template <typename T>
 void cudaMemset(shared_device_ptr<T> dst, int value, size_t count);
 
@@ -70,6 +73,9 @@ class shared_device_ptr {
     friend void cudaMemcpy<T>(shared_device_ptr<T>,
                               const std::remove_extent_t<T> *,
                               size_t);
+    friend void cudaMemcpy<T>(std::remove_extent_t<T> *dst,
+                              const shared_device_ptr<T> source,
+                              size_t count);
     friend void cudaMemset<T>(shared_device_ptr<T> dst, int value, size_t count);
 };
 
@@ -336,8 +342,9 @@ void cudaMemcpy(std::remove_extent_t<T> *dst,
 
 template <typename T>
 void cudaMemset(shared_device_ptr<T> dst, int value, size_t count) {
-    CUDA_CHECK(cudaMemset(
-        dst.get(), value, count * sizeof(typename shared_device_ptr<T>::element_type)));
+    CUDA_CHECK(cudaMemset(dst.ptr.get(),
+                          value,
+                          count * sizeof(typename shared_device_ptr<T>::element_type)));
 }
 // CUDA_CHECK(cudaMemset(
 //     pedestal_n.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));

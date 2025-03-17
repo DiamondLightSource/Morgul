@@ -617,8 +617,8 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     launch_bitshuffle(stream,
                       output_buffer,
                       output_buffer,
-                      dev_bitshuffle_buffer_in.get(),
-                      dev_bitshuffle_buffer_out.get());
+                      dev_bitshuffle_buffer_in,
+                      dev_bitshuffle_buffer_out);
     CUDA_CHECK(cudaStreamSynchronize(stream));
     stats_bs += timer_bs.get_elapsed_seconds();
 
@@ -677,8 +677,8 @@ auto DataStreamHandler::end_acquisition() -> void {
                                                                 * GAIN_MODES.size());
 
         call_jungfrau_pedestal_finalize(stream,
-                                        pedestal_n.get(),
-                                        pedestal_x.get(),
+                                        pedestal_n,
+                                        pedestal_x,
                                         new_pedestals.data(),
                                         reinterpret_cast<bool *>(pedestal_mask.data()));
         CUDA_CHECK(cudaStreamSynchronize(stream));

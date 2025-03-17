@@ -96,15 +96,15 @@ void call_jungfrau_pedestal_accumulate(cudaStream_t stream,
                                              expected_gain_mode);
 }
 void call_jungfrau_pedestal_finalize(cudaStream_t stream,
-                                     const uint32_t *pedestals_n,
-                                     const uint32_t *pedestals_x,
+                                     const shared_device_ptr<uint32_t[]> pedestals_n,
+                                     const shared_device_ptr<uint32_t[]> pedestals_x,
                                      float *pedestals,
                                      bool *pedestals_mask) {
     jungfrau_pedestal_finalize<<<dim3(HM_WIDTH / 32, 3 * HM_HEIGHT / 32),
                                  dim3(32, 32),
                                  0,
                                  stream>>>(
-        pedestals_n, pedestals_x, pedestals, pedestals_mask);
+        pedestals_n.get(), pedestals_x.get(), pedestals, pedestals_mask);
 }
 
 #define SIZE 4096
@@ -158,11 +158,12 @@ __global__ void bitshuffle(const uint8_t *in, uint8_t *out) {
 void launch_bitshuffle(cudaStream_t stream,
                        void *in,
                        void *out,
-                       void *d_in,
-                       void *d_out) {
+                       shared_device_ptr<std::byte[]> d_in,
+                       shared_device_ptr<std::byte[]> d_out) {
     const dim3 block(1024);
     const dim3 grid(64);
-    cudaMemcpy(d_in, in, 256 * 1024 * sizeof(uint16_t), cudaMemcpyHostToDevice);
-    bitshuffle<<<grid, block, 0, stream>>>((const uint8_t *)d_in, (uint8_t *)d_out);
-    cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(d_in, in, 256 * 1024 * sizeof(uint16_t));
+    bitshuffle<<<grid, block, 0, stream>>>(static_cast<const uint8_t *>(d_in.get()),
+                                           static_cast<uint8_t *>(d_out));
+    cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t));
 }
