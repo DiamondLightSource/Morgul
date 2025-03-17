@@ -30,16 +30,21 @@ class shared_device_ptr {
   public:
     using element_type = typename std::shared_ptr<T>::element_type;
 
+    shared_device_ptr() {}
+
     explicit shared_device_ptr(std::shared_ptr<T> pointer) : ptr(pointer) {}
 
     template <typename Deleter>
     explicit shared_device_ptr(element_type *pointer, Deleter deleter)
         : ptr(pointer, deleter) {}
+    shared_device_ptr(const shared_device_ptr<T> &source) : ptr(source.ptr) {}
     shared_device_ptr(shared_device_ptr<T> &&source) {
         ptr = source.ptr;
         source.ptr.reset();
     }
-    // auto get() -> DevicePointer<T> {}
+    element_type &operator[](std::ptrdiff_t idx) const {
+        return ptr[idx];
+    }
 
   private:
     std::shared_ptr<T> ptr;
