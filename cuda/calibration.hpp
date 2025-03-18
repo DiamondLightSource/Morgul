@@ -48,7 +48,6 @@ class PedestalData {
     }
 
   private:
-    // shared_device_ptr<pedestal_t[]> _gpu_data;
     std::optional<size_t> _gpu_pitch;
     std::filesystem::path _path;
     ModuleMode _module_mode;
@@ -56,28 +55,6 @@ class PedestalData {
     std::map<size_t, GainModePointers> _gpu_modules;
     float _exposure_time;
 };
-
-// template <typename T>
-// class PerModuleData {
-//   public:
-//     typedef T value_t;
-//     using GainModePtrs = std::array<T*, GAIN_MODES.size()>;
-//     void upload();
-//     auto pitch() {
-//         assert(_gpu_data);
-//         return _gpu_pitch;
-//     }
-//     auto get_gpu_ptrs(size_t hmi) {
-//         assert(_gpu_data);
-//         return _gpu_modules[hmi];
-//     }
-
-//   private:
-//     std::shared_ptr<T[]> _gpu_data;
-//     std::optional<size_t> _gpu_pitch;
-//     std::map<size_t, std::map<decltype(GAIN_MODES)::value_type, Array2D<T>>> _modules;
-//     std::map<size_t, GainModePtrs> _gpu_modules;
-// };
 
 class GainData {
   public:
