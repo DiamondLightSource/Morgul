@@ -439,6 +439,9 @@ class DataStreamHandler {
     zmq::socket_t &send;
     std::unique_ptr<std::byte[]> bitshuffled_buffer =
         std::make_unique<std::byte[]>(HM_PIXELS * sizeof(pixel_t));
+    /// Where to store the output data, that will be fed into compression
+    shared_device_ptr<uint16_t[]> dev_output_buffer =
+        make_cuda_malloc<uint16_t>(HM_PIXELS);
     std::vector<std::byte> compression_buffer;
     std::vector<std::byte> partial_compression_buffer;
     // Accumulation buffers for calculating pedestals on-the-fly
@@ -566,9 +569,6 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       std::span<uint16_t> &frame) -> void {
     auto time_frame = Timer();
     auto energy = header.dls.energy.value_or(12.4);
-
-    // Where to store the output data, that will be fed into compression
-    auto dev_output_buffer = make_cuda_malloc<uint16_t>(HM_PIXELS);
 
     if (header.dls.raw) {
         // We want raw, uncorrected data. Just copy it over.
