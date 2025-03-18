@@ -74,23 +74,23 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
                                      GainData::GainModePointers gains,
                                      PedestalData::GainModePointers pedestals,
                                      const uint16_t *halfmodule_data,
-                                     uint16_t *out_corrected_data,
+                                     shared_device_ptr<uint16_t> out_corrected_data,
                                      float energy_kev) {
     // Extract the raw pointers from the smart pointers, to send to kernel
     GainRawPointers gain_raw_pointers;
     PedestalRawPointers pedestal_raw_pointers;
-
     for (size_t i = 0; i < GAIN_MODES.size(); ++i) {
         gain_raw_pointers[i] = gains[i].get();
         pedestal_raw_pointers[i] = pedestals[i].get();
     }
+
     jungfrau_image_corrections<<<dim3(HM_WIDTH / 32, HM_HEIGHT / 32),
                                  dim3(32, 32),
                                  0,
                                  stream>>>(gain_raw_pointers,
                                            pedestal_raw_pointers,
                                            halfmodule_data,
-                                           out_corrected_data,
+                                           out_corrected_data.get(),
                                            energy_kev);
 }
 
@@ -170,15 +170,11 @@ __global__ void bitshuffle(const uint8_t *in, uint8_t *out) {
 }
 
 void launch_bitshuffle(cudaStream_t stream,
-                       void *in,
-                       void *out,
                        shared_device_ptr<std::byte[]> d_in,
                        shared_device_ptr<std::byte[]> d_out) {
     const dim3 block(1024);
     const dim3 grid(64);
-    cudaMemcpy(d_in, static_cast<std::byte *>(in), 256 * 1024 * sizeof(uint16_t));
     bitshuffle<<<grid, block, 0, stream>>>(
         reinterpret_cast<const uint8_t *>(d_in.get()),
         reinterpret_cast<uint8_t *>(d_out.get()));
-    cudaMemcpy(static_cast<std::byte *>(out), d_out, 256 * 1024 * sizeof(uint16_t));
 }
