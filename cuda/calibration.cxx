@@ -207,7 +207,8 @@ auto PedestalData::upload() -> void {
             assert(HM_WIDTH == data.width());
             assert(HM_HEIGHT == data.height());
             assert(1024 == data.stride());
-            cudaMemcpy(dev[i], data.data().data(), HM_HEIGHT * HM_WIDTH);
+            cudaMemcpyAsync(dev[i], data.data().data(), HM_HEIGHT * HM_WIDTH, 0);
+            CUDA_CHECK(cudaDeviceSynchronize());
         }
         _gpu_modules[hmi] = dev;
     }
@@ -310,7 +311,8 @@ auto GainData::upload() -> void {
             assert(HM_WIDTH == data.width());
             assert(HM_HEIGHT == data.height());
             assert(1024 == data.stride());
-            cudaMemcpy(dev[i], data.data().data(), HM_HEIGHT * HM_WIDTH);
+            cudaMemcpyAsync(dev[i], data.data().data(), HM_HEIGHT * HM_WIDTH, 0);
+            CUDA_CHECK(cudaDeviceSynchronize());
         }
         _gpu_modules[hmi] = dev;
     }

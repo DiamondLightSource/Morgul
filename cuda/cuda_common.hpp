@@ -19,15 +19,20 @@ template <typename T>
 class shared_device_ptr;
 
 template <typename T>
-void cudaMemcpy(shared_device_ptr<T> dst,
-                const std::remove_extent_t<T> *source,
-                size_t count);
+void cudaMemcpyAsync(shared_device_ptr<T> dst,
+                     const std::remove_extent_t<T> *source,
+                     size_t count,
+                     cudaStream_t stream);
 template <typename T>
-void cudaMemcpy(std::remove_extent_t<T> *dst,
-                const shared_device_ptr<T> source,
-                size_t count);
+void cudaMemcpyAsync(std::remove_extent_t<T> *dst,
+                     const shared_device_ptr<T> source,
+                     size_t count,
+                     cudaStream_t stream);
 template <typename T>
-void cudaMemset(shared_device_ptr<T> dst, int value, size_t count);
+void cudaMemsetAsync(shared_device_ptr<T> dst,
+                     int value,
+                     size_t count,
+                     cudaStream_t stream);
 
 template <typename T>
 class raw_device_ptr {
@@ -94,13 +99,18 @@ class shared_device_ptr {
   private:
     std::shared_ptr<T> ptr;
 
-    friend void cudaMemcpy<T>(shared_device_ptr<T>,
-                              const std::remove_extent_t<T> *,
-                              size_t);
-    friend void cudaMemcpy<T>(std::remove_extent_t<T> *dst,
-                              const shared_device_ptr<T> source,
-                              size_t count);
-    friend void cudaMemset<T>(shared_device_ptr<T> dst, int value, size_t count);
+    friend void cudaMemcpyAsync<T>(shared_device_ptr<T>,
+                                   const std::remove_extent_t<T> *,
+                                   size_t,
+                                   cudaStream_t);
+    friend void cudaMemcpyAsync<T>(std::remove_extent_t<T> *dst,
+                                   const shared_device_ptr<T> source,
+                                   size_t count,
+                                   cudaStream_t stream);
+    friend void cudaMemsetAsync<T>(shared_device_ptr<T> dst,
+                                   int value,
+                                   size_t count,
+                                   cudaStream_t stream);
 
     template <typename U>
     friend class raw_device_ptr;
@@ -196,38 +206,42 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
 }
 
 template <typename T>
-void cudaMemcpy(shared_device_ptr<T> dst,
-                const std::remove_extent_t<T> *source,
-                size_t count) {
-    CUDA_CHECK(cudaMemcpy(dst.ptr.get(),
-                          source,
-                          sizeof(typename shared_device_ptr<T>::element_type) * count,
-                          cudaMemcpyHostToDevice));
+void cudaMemcpyAsync(shared_device_ptr<T> dst,
+                     const std::remove_extent_t<T> *source,
+                     size_t count,
+                     cudaStream_t stream) {
+    CUDA_CHECK(
+        cudaMemcpyAsync(dst.ptr.get(),
+                        source,
+                        sizeof(typename shared_device_ptr<T>::element_type) * count,
+                        cudaMemcpyHostToDevice,
+                        stream));
 }
 
 template <typename T>
-void cudaMemcpy(std::remove_extent_t<T> *dst,
-                const shared_device_ptr<T> source,
-                size_t count) {
-    CUDA_CHECK(cudaMemcpy(dst,
-                          source.ptr.get(),
-                          sizeof(typename shared_device_ptr<T>::element_type) * count,
-                          cudaMemcpyDeviceToHost));
+void cudaMemcpyAsync(std::remove_extent_t<T> *dst,
+                     const shared_device_ptr<T> source,
+                     size_t count,
+                     cudaStream_t stream) {
+    CUDA_CHECK(
+        cudaMemcpyAsync(dst,
+                        source.ptr.get(),
+                        sizeof(typename shared_device_ptr<T>::element_type) * count,
+                        cudaMemcpyDeviceToHost,
+                        stream));
 }
 
 template <typename T>
-void cudaMemset(shared_device_ptr<T> dst, int value, size_t count) {
-    CUDA_CHECK(cudaMemset(dst.ptr.get(),
-                          value,
-                          count * sizeof(typename shared_device_ptr<T>::element_type)));
+void cudaMemsetAsync(shared_device_ptr<T> dst,
+                     int value,
+                     size_t count,
+                     cudaStream_t stream) {
+    CUDA_CHECK(
+        cudaMemsetAsync(dst.ptr.get(),
+                        value,
+                        count * sizeof(typename shared_device_ptr<T>::element_type),
+                        stream));
 }
-// CUDA_CHECK(cudaMemset(
-//     pedestal_n.get(), 0, GAIN_MODES.size() * HM_PIXELS * sizeof(uint32_t)));
-
-// CUDA_CHECK(cudaMemcpy(ptr,
-//     data.data().data(),
-//     sizeof(pedestal_t) * HM_WIDTH * HM_HEIGHT,
-//     cudaMemcpyHostToDevice));
 
 class CudaStream {
     cudaStream_t _stream;

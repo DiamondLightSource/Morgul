@@ -293,11 +293,7 @@ class PedestalsLibrary {
                 auto space = H5Cleanup<H5Sclose>(H5Screate_simple(2, dims, nullptr));
                 for (auto [gain, pedestal_data] : hm_gains) {
                     auto ds_name = fmt::format("pedestal_{}", gain);
-                    cudaMemcpy(pedestal_host.data(), pedestal_data, HM_PIXELS);
-                    // CUDA_CHECK(cudaMemcpy(pedestal_host.data(),
-                    //                       pedestal_data.get(),
-                    //                       HM_PIXELS * sizeof(pedestal_t),
-                    //                       cudaMemcpyDeviceToHost));
+                    cudaMemcpyAsync(pedestal_host.data(), pedestal_data, HM_PIXELS, 0);
                     CUDA_CHECK(cudaDeviceSynchronize());
                     auto dset = H5Cleanup<H5Dclose>(H5Dcreate(hm_group,
                                                               ds_name.c_str(),
@@ -341,9 +337,9 @@ class PedestalsLibrary {
         assert(pedestal_0.size() == HM_PIXELS);
         assert(pedestal_1.size() == HM_PIXELS);
         assert(pedestal_2.size() == HM_PIXELS);
-        cudaMemcpy(dev_0, pedestal_0.data(), pedestal_0.size());
-        cudaMemcpy(dev_1, pedestal_1.data(), pedestal_1.size());
-        cudaMemcpy(dev_2, pedestal_2.data(), pedestal_2.size());
+        cudaMemcpyAsync(dev_0, pedestal_0.data(), pedestal_0.size(), 0);
+        cudaMemcpyAsync(dev_1, pedestal_1.data(), pedestal_1.size(), 0);
+        cudaMemcpyAsync(dev_2, pedestal_2.data(), pedestal_2.size(), 0);
 
         // CUDA_CHECK(cudaMemcpy(dev_0.get(),
         //                       pedestal_0.data(),
@@ -425,9 +421,9 @@ class DataStreamHandler {
 
   private:
     void reset_pedestal_buffers() {
-        cudaMemset(pedestal_n, 0, GAIN_MODES.size() * HM_PIXELS);
-        cudaMemset(pedestal_x, 0, GAIN_MODES.size() * HM_PIXELS);
-        cudaMemset(pedestal_x_sq, 0, GAIN_MODES.size() * HM_PIXELS);
+        cudaMemsetAsync(pedestal_n, 0, GAIN_MODES.size() * HM_PIXELS, 0);
+        cudaMemsetAsync(pedestal_x, 0, GAIN_MODES.size() * HM_PIXELS, 0);
+        cudaMemsetAsync(pedestal_x_sq, 0, GAIN_MODES.size() * HM_PIXELS, 0);
         CUDA_CHECK(cudaDeviceSynchronize());
     }
 
@@ -572,10 +568,10 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
 
     if (header.dls.raw) {
         // We want raw, uncorrected data. Just copy it over.
-        cudaMemcpy(dev_output_buffer, frame.data(), HM_PIXELS);
+        cudaMemcpyAsync(dev_output_buffer, frame.data(), HM_PIXELS, stream);
     } else if (is_pedestal_mode) {
         // We also want to keep raw pedestal data uncorrected
-        cudaMemcpy(dev_output_buffer, frame.data(), HM_PIXELS);
+        cudaMemcpyAsync(dev_output_buffer, frame.data(), HM_PIXELS, stream);
         // Work out what we expect the gain mode to be for this frame.
         // We don't want to count pixels in frames that aren't what they
         // are supposed to be forced to.
@@ -600,7 +596,6 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
             frame.data(),
             dev_output_buffer,
             energy);
-        CUDA_CHECK(cudaStreamSynchronize(stream));
         stats_correct += timer_corr.get_elapsed_seconds();
     }
     // Construct the HDF5 header so that we can do direct chunk write
@@ -617,7 +612,8 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     auto timer_bs = Timer();
     launch_bitshuffle(stream, dev_output_buffer, dev_bitshuffle_buffer_out);
     // Copy this back from the device for LZ4
-    cudaMemcpy(bitshuffled_buffer.get(), dev_bitshuffle_buffer_out, HM_PIXELS * 2);
+    cudaMemcpyAsync(
+        bitshuffled_buffer.get(), dev_bitshuffle_buffer_out, HM_PIXELS * 2, stream);
     CUDA_CHECK(cudaStreamSynchronize(stream));
     stats_bs += timer_bs.get_elapsed_seconds();
 
