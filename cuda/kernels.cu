@@ -1,8 +1,11 @@
 #include "calibration.hpp"
 #include "constants.hpp"
 
-__global__ void jungfrau_image_corrections(GainData::GainModePointers gains,
-                                           PedestalData::GainModePointers pedestals,
+using GainRawPointers = std::array<GainData::gain_t *, GAIN_MODES.size()>;
+using PedestalRawPointers = std::array<PedestalData::pedestal_t *, GAIN_MODES.size()>;
+
+__global__ void jungfrau_image_corrections(GainRawPointers gains,
+                                           PedestalRawPointers pedestals,
                                            const uint16_t *halfmodule_data,
                                            uint16_t *out_corrected_data,
                                            float energy_kev) {
@@ -71,37 +74,51 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
                                      GainData::GainModePointers gains,
                                      PedestalData::GainModePointers pedestals,
                                      const uint16_t *halfmodule_data,
-                                     uint16_t *out_corrected_data,
+                                     shared_device_ptr<uint16_t[]> out_corrected_data,
                                      float energy_kev) {
+    // Extract the raw pointers from the smart pointers, to send to kernel
+    GainRawPointers gain_raw_pointers;
+    PedestalRawPointers pedestal_raw_pointers;
+    for (size_t i = 0; i < GAIN_MODES.size(); ++i) {
+        gain_raw_pointers[i] = gains[i].get();
+        pedestal_raw_pointers[i] = pedestals[i].get();
+    }
+
     jungfrau_image_corrections<<<dim3(HM_WIDTH / 32, HM_HEIGHT / 32),
                                  dim3(32, 32),
                                  0,
-                                 stream>>>(
-        gains, pedestals, halfmodule_data, out_corrected_data, energy_kev);
+                                 stream>>>(gain_raw_pointers,
+                                           pedestal_raw_pointers,
+                                           halfmodule_data,
+                                           out_corrected_data.get(),
+                                           energy_kev);
 }
 
 void call_jungfrau_pedestal_accumulate(cudaStream_t stream,
                                        const uint16_t *halfmodule_data,
-                                       uint32_t *pedestals_n,
-                                       uint32_t *pedestals_x,
-                                       uint64_t *pedestals_x_sq,
+                                       shared_device_ptr<uint32_t[]> pedestals_n,
+                                       shared_device_ptr<uint32_t[]> pedestals_x,
+                                       shared_device_ptr<uint64_t[]> pedestals_x_sq,
                                        int expected_gain_mode) {
     jungfrau_pedestal_accumulate<<<dim3(HM_WIDTH / 32, HM_HEIGHT / 32),
                                    dim3(32, 32),
                                    0,
-                                   stream>>>(
-        halfmodule_data, pedestals_n, pedestals_x, pedestals_x_sq, expected_gain_mode);
+                                   stream>>>(halfmodule_data,
+                                             pedestals_n.get(),
+                                             pedestals_x.get(),
+                                             pedestals_x_sq.get(),
+                                             expected_gain_mode);
 }
 void call_jungfrau_pedestal_finalize(cudaStream_t stream,
-                                     const uint32_t *pedestals_n,
-                                     const uint32_t *pedestals_x,
+                                     const shared_device_ptr<uint32_t[]> pedestals_n,
+                                     const shared_device_ptr<uint32_t[]> pedestals_x,
                                      float *pedestals,
                                      bool *pedestals_mask) {
     jungfrau_pedestal_finalize<<<dim3(HM_WIDTH / 32, 3 * HM_HEIGHT / 32),
                                  dim3(32, 32),
                                  0,
                                  stream>>>(
-        pedestals_n, pedestals_x, pedestals, pedestals_mask);
+        pedestals_n.get(), pedestals_x.get(), pedestals, pedestals_mask);
 }
 
 #define SIZE 4096
@@ -153,13 +170,11 @@ __global__ void bitshuffle(const uint8_t *in, uint8_t *out) {
 }
 
 void launch_bitshuffle(cudaStream_t stream,
-                       void *in,
-                       void *out,
-                       void *d_in,
-                       void *d_out) {
+                       raw_device_ptr<std::byte[]> d_in,
+                       shared_device_ptr<std::byte[]> d_out) {
     const dim3 block(1024);
     const dim3 grid(64);
-    cudaMemcpy(d_in, in, 256 * 1024 * sizeof(uint16_t), cudaMemcpyHostToDevice);
-    bitshuffle<<<grid, block, 0, stream>>>((const uint8_t *)d_in, (uint8_t *)d_out);
-    cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t), cudaMemcpyDeviceToHost);
+    bitshuffle<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t *>(d_in.get()),
+        reinterpret_cast<uint8_t *>(d_out.get()));
 }
