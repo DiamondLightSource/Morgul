@@ -197,7 +197,7 @@ auto PedestalData::upload() -> void {
     // Copy each halfmodules gain modes into device memory
     for (const auto &[hmi, gain_modes] : _modules) {
         GainModePointers dev;
-        for (auto i : std::ranges::views::iota(GAIN_MODES.size())) {
+        for (int i = 0; i < GAIN_MODES.size(); ++i) {
             auto [ptr, pitch] =
                 make_cuda_pitched_malloc<pedestal_t>(HM_WIDTH, HM_HEIGHT);
             dev[i] = ptr;
@@ -301,7 +301,7 @@ auto GainData::upload() -> void {
 
     for (const auto &[hmi, gain_modes] : _modules) {
         GainModePointers dev;
-        for (auto i : std::ranges::views::iota(GAIN_MODES.size())) {
+        for (int i = 0; i < GAIN_MODES.size(); ++i) {
             auto [ptr, pitch] = make_cuda_pitched_malloc<gain_t>(HM_WIDTH, HM_HEIGHT);
             dev[i] = ptr;
             _gpu_pitch = pitch;

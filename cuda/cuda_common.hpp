@@ -34,7 +34,7 @@ class shared_device_ptr {
   public:
     using element_type = typename std::shared_ptr<T>::element_type;
 
-    shared_device_ptr() {}
+    shared_device_ptr() : ptr(nullptr) {}
 
     // explicit shared_device_ptr(std::shared_ptr<T> pointer) : ptr(pointer) {}
 
