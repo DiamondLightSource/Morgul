@@ -76,6 +76,7 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
                                      const uint16_t *halfmodule_data,
                                      uint16_t *out_corrected_data,
                                      float energy_kev) {
+    // Extract the raw pointers from the smart pointers, to send to kernel
     GainRawPointers gain_raw_pointers;
     PedestalRawPointers pedestal_raw_pointers;
 
