@@ -5,6 +5,7 @@
 
 #include "commands.hpp"
 #include "constants.hpp"
+#include "cuda_argparse.hpp"
 #include "cuda_common.hpp"
 
 using namespace fmt;
