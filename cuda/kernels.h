@@ -9,7 +9,7 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
                                      GainData::GainModePointers gains,
                                      PedestalData::GainModePointers pedestals,
                                      const uint16_t *halfmodule_data,
-                                     shared_device_ptr<uint16_t> out_corrected_data,
+                                     shared_device_ptr<uint16_t[]> out_corrected_data,
                                      float energy_kev);
 
 void call_jungfrau_pedestal_accumulate(cudaStream_t stream,
@@ -26,5 +26,5 @@ void call_jungfrau_pedestal_finalize(cudaStream_t stream,
                                      bool *pedestals_mask);
 
 void launch_bitshuffle(cudaStream_t stream,
-                       shared_device_ptr<std::byte[]> d_in,
+                       raw_device_ptr<std::byte[]> d_in,
                        shared_device_ptr<std::byte[]> d_out);

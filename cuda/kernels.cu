@@ -74,7 +74,7 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
                                      GainData::GainModePointers gains,
                                      PedestalData::GainModePointers pedestals,
                                      const uint16_t *halfmodule_data,
-                                     shared_device_ptr<uint16_t> out_corrected_data,
+                                     shared_device_ptr<uint16_t[]> out_corrected_data,
                                      float energy_kev) {
     // Extract the raw pointers from the smart pointers, to send to kernel
     GainRawPointers gain_raw_pointers;
@@ -170,7 +170,7 @@ __global__ void bitshuffle(const uint8_t *in, uint8_t *out) {
 }
 
 void launch_bitshuffle(cudaStream_t stream,
-                       shared_device_ptr<std::byte[]> d_in,
+                       raw_device_ptr<std::byte[]> d_in,
                        shared_device_ptr<std::byte[]> d_out) {
     const dim3 block(1024);
     const dim3 grid(64);

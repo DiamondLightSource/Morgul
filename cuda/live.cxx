@@ -409,7 +409,6 @@ class DataStreamHandler {
         pedestal_x = make_cuda_malloc<uint32_t>(GAIN_MODES.size() * HM_PIXELS);
         pedestal_x_sq = make_cuda_malloc<uint64_t>(GAIN_MODES.size() * HM_PIXELS);
         reset_pedestal_buffers();
-        dev_bitshuffle_buffer_in = make_cuda_malloc<std::byte>(HM_PIXELS * 2);
         dev_bitshuffle_buffer_out = make_cuda_malloc<std::byte>(HM_PIXELS * 2);
     }
     ~DataStreamHandler() {}
@@ -438,8 +437,8 @@ class DataStreamHandler {
     const GainData &gains;
     PedestalsLibrary &pedestals;
     zmq::socket_t &send;
-    std::unique_ptr<pixel_t[]> corrected_buffer =
-        std::make_unique<pixel_t[]>(HM_PIXELS);
+    std::unique_ptr<std::byte[]> bitshuffled_buffer =
+        std::make_unique<std::byte[]>(HM_PIXELS * sizeof(pixel_t));
     std::vector<std::byte> compression_buffer;
     std::vector<std::byte> partial_compression_buffer;
     // Accumulation buffers for calculating pedestals on-the-fly
@@ -448,7 +447,6 @@ class DataStreamHandler {
     shared_device_ptr<uint32_t[]> pedestal_n;
     shared_device_ptr<uint32_t[]> pedestal_x;
     shared_device_ptr<uint64_t[]> pedestal_x_sq;
-    shared_device_ptr<std::byte[]> dev_bitshuffle_buffer_in;
     shared_device_ptr<std::byte[]> dev_bitshuffle_buffer_out;
 };
 
@@ -569,12 +567,15 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     auto time_frame = Timer();
     auto energy = header.dls.energy.value_or(12.4);
 
-    pixel_t *output_buffer = nullptr;
+    // Where to store the output data, that will be fed into compression
+    auto dev_output_buffer = make_cuda_malloc<uint16_t>(HM_PIXELS);
 
     if (header.dls.raw) {
-        output_buffer = frame.data();
+        // We want raw, uncorrected data. Just copy it over.
+        cudaMemcpy(dev_output_buffer, frame.data(), HM_PIXELS);
     } else if (is_pedestal_mode) {
-        output_buffer = frame.data();
+        // We also want to keep raw pedestal data uncorrected
+        cudaMemcpy(dev_output_buffer, frame.data(), HM_PIXELS);
         // Work out what we expect the gain mode to be for this frame.
         // We don't want to count pixels in frames that aren't what they
         // are supposed to be forced to.
@@ -592,13 +593,12 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
             stream, frame.data(), pedestal_n, pedestal_x, pedestal_x_sq, gain_mode);
     } else {
         auto timer_corr = Timer();
-        output_buffer = corrected_buffer.get();
         call_jungfrau_image_corrections(
             stream,
             gains.get_gpu_ptrs(known_hmi.value()),
             pedestals.get_gpu_ptrs(exposure_ns, known_hmi.value()),
             frame.data(),
-            output_buffer,
+            dev_output_buffer,
             energy);
         CUDA_CHECK(cudaStreamSynchronize(stream));
         stats_correct += timer_corr.get_elapsed_seconds();
@@ -607,18 +607,17 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     // on the other end of the pipe
     // first 12 bytes are uint64_t BE array size and uint32_t BE block size
     // these are the precomputed values
-    uint64_t &uncompress_size =
+    uint64_t &header_uncompress_size_ref =
         *reinterpret_cast<uint64_t *>(compression_buffer.data());
-    uint32_t &block_size = *reinterpret_cast<uint32_t *>(compression_buffer.data() + 8);
-    uncompress_size = __builtin_bswap64(2 * 256 * 1024);
-    block_size = __builtin_bswap32(8192);
+    uint32_t &header_block_size_ref =
+        *reinterpret_cast<uint32_t *>(compression_buffer.data() + 8);
+    header_uncompress_size_ref = __builtin_bswap64(2 * 256 * 1024);
+    header_block_size_ref = __builtin_bswap32(8192);
 
     auto timer_bs = Timer();
-    launch_bitshuffle(stream,
-                      output_buffer,
-                      output_buffer,
-                      dev_bitshuffle_buffer_in,
-                      dev_bitshuffle_buffer_out);
+    launch_bitshuffle(stream, dev_output_buffer, dev_bitshuffle_buffer_out);
+    // Copy this back from the device for LZ4
+    cudaMemcpy(bitshuffled_buffer.get(), dev_bitshuffle_buffer_out, HM_PIXELS * 2);
     CUDA_CHECK(cudaStreamSynchronize(stream));
     stats_bs += timer_bs.get_elapsed_seconds();
 
@@ -626,13 +625,13 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     size_t current_index = 12;
     for (size_t block = 0; block < HM_PIXELS * 2 / 8192; ++block) {
         auto size = LZ4_compress_default(
-            reinterpret_cast<char *>(output_buffer + block * 4096),
+            reinterpret_cast<char *>(bitshuffled_buffer.get() + block * 4096),
             reinterpret_cast<char *>(compression_buffer.data()) + current_index + 4,
             8192,
             compression_buffer.size() - current_index - 4);
-        uint32_t &block_size =
+        uint32_t &header_block_size_ref =
             *reinterpret_cast<uint32_t *>(compression_buffer.data() + current_index);
-        block_size = __builtin_bswap32(size);
+        header_block_size_ref = __builtin_bswap32(size);
         current_index += size + 4;
     }
     stats_lz4_time += time_lz4.get_elapsed_seconds();

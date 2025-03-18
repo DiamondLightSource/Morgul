@@ -30,6 +30,31 @@ template <typename T>
 void cudaMemset(shared_device_ptr<T> dst, int value, size_t count);
 
 template <typename T>
+class raw_device_ptr {
+  public:
+    using element_type = typename std::remove_extent_t<T>;
+
+    // Allow implicit conversions to same type
+    raw_device_ptr(shared_device_ptr<T> &shared) : ptr(shared.ptr.get()) {}
+
+    // Allow converting to std::byte from any shared_ptr
+    template <typename U>
+    raw_device_ptr(shared_device_ptr<U> &shared)
+        : ptr(reinterpret_cast<element_type *>(shared.ptr.get())) {
+        static_assert(std::is_same_v<element_type, std::byte>);
+    }
+#ifdef __NVCC__
+    /// @brief  Get the raw pointer, but only if building with CUDA
+    element_type *get() const {
+        return ptr;
+    }
+#endif
+
+  private:
+    element_type *ptr;
+};
+
+template <typename T>
 class shared_device_ptr {
   public:
     using element_type = typename std::shared_ptr<T>::element_type;
@@ -76,6 +101,9 @@ class shared_device_ptr {
                               const shared_device_ptr<T> source,
                               size_t count);
     friend void cudaMemset<T>(shared_device_ptr<T> dst, int value, size_t count);
+
+    template <typename U>
+    friend class raw_device_ptr;
 };
 
 class cuda_error : public std::runtime_error {
