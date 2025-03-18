@@ -1,8 +1,11 @@
 #include "calibration.hpp"
 #include "constants.hpp"
 
-__global__ void jungfrau_image_corrections(GainData::GainModePointers gains,
-                                           PedestalData::GainModePointers pedestals,
+using GainRawPointers = std::array<GainData::gain_t *, GAIN_MODES.size()>;
+using PedestalRawPointers = std::array<PedestalData::pedestal_t *, GAIN_MODES.size()>;
+
+__global__ void jungfrau_image_corrections(GainRawPointers gains,
+                                           PedestalRawPointers pedestals,
                                            const uint16_t *halfmodule_data,
                                            uint16_t *out_corrected_data,
                                            float energy_kev) {
@@ -73,11 +76,21 @@ void call_jungfrau_image_corrections(cudaStream_t stream,
                                      const uint16_t *halfmodule_data,
                                      uint16_t *out_corrected_data,
                                      float energy_kev) {
+    GainRawPointers gain_raw_pointers;
+    PedestalRawPointers pedestal_raw_pointers;
+
+    for (size_t i = 0; i < GAIN_MODES.size(); ++i) {
+        gain_raw_pointers[i] = gains[i].get();
+        pedestal_raw_pointers[i] = pedestals[i].get();
+    }
     jungfrau_image_corrections<<<dim3(HM_WIDTH / 32, HM_HEIGHT / 32),
                                  dim3(32, 32),
                                  0,
-                                 stream>>>(
-        gains, pedestals, halfmodule_data, out_corrected_data, energy_kev);
+                                 stream>>>(gain_raw_pointers,
+                                           pedestal_raw_pointers,
+                                           halfmodule_data,
+                                           out_corrected_data,
+                                           energy_kev);
 }
 
 void call_jungfrau_pedestal_accumulate(cudaStream_t stream,
@@ -163,7 +176,8 @@ void launch_bitshuffle(cudaStream_t stream,
     const dim3 block(1024);
     const dim3 grid(64);
     cudaMemcpy(d_in, static_cast<std::byte *>(in), 256 * 1024 * sizeof(uint16_t));
-    bitshuffle<<<grid, block, 0, stream>>>(static_cast<const uint8_t *>(d_in.get()),
-                                           static_cast<uint8_t *>(d_out.get()));
-    cudaMemcpy(out, d_out, 256 * 1024 * sizeof(uint16_t));
+    bitshuffle<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t *>(d_in.get()),
+        reinterpret_cast<uint8_t *>(d_out.get()));
+    cudaMemcpy(static_cast<std::byte *>(out), d_out, 256 * 1024 * sizeof(uint16_t));
 }
