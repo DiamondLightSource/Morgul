@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.20...3.30)
+cmake_minimum_required(VERSION 3.24...3.30)
 # Constraints on minimum version:
 # - h5read: FindHDF5 only creates interface targets on 3.20+
+# - 3.24 Added FetchContent find_package behaviour
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
