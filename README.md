@@ -20,7 +20,7 @@ downloaded automatically. as are some external libraries. To download all the
 non-automatic dependencies as a conda environment:
 
 ```
-mamba create -p ./ENV cmake cxx-compiler cppzmq 'hdf5>1.12' lz4-c
+mamba create -p ./ENV -c conda-forge cmake cxx-compiler cppzmq 'hdf5>1.12' lz4-c
 ```
 If you want to run the python portions then you need the following packages:
 ```
