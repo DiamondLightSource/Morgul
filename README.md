@@ -22,6 +22,12 @@ non-automatic dependencies as a conda environment:
 ```
 mamba create -p ./ENV cmake cxx-compiler cppzmq 'hdf5>1.12' lz4-c
 ```
+If you want to run the python portions then you need the following packages:
+```
+mamba install \
+  python numpy h5py hdf5plugin typer python-dateutil \
+  pint pydantic napari rich
+```
 
 ---
 
