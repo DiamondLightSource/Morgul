@@ -60,7 +60,10 @@ static const std::string JF1M_Display{
     "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m1\e[39m\e[38;5;93mM\e["
     "39m\e[38;5;33m\e[39m\e[0m\n"};
 
-static const std::string JF9M_SIM_Display{"JF9M-SIM"};
+static const std::string JF9M_SIM_Display{
+    "\e[38;2;207;174;2mJ\e[39m\e[38;2;235;133;15mF\e[39m\e[38;2;251;91;40m9\e[39m\e[38;"
+    "2;254;53;76mM\e[39m\e[38;2;243;24;116m-\e[39m\e[38;2;219;5;158mS\e[39m\e[38;2;185;"
+    "1;197mI\e[39m\e[38;2;145;10;228mM\e[39m\e[38;2;103;32;248m\e[39m"};
 
 #endif
 
