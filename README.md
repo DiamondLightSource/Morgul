@@ -1,4 +1,31 @@
-# Morgul - Software For Jungfrau Commissioning
+# Morgul - Processing for Diamond Jungfrau
+
+Morgul is a set of tools we have used for commissioning and live processing for
+Jungfrau detectors at Diamond.
+
+Current state: Working towards a fully functional live correction system, via
+`morgul-cuda`. The old `morgul` tooling exists separately, and still has some
+usage for e.g. NXMX conversion, but the approaches used for earlier testing are
+mostly obsolete and superceded now.
+
+## Building and Using Morgul-Cuda
+
+Minimal system requirement: CUDA 12.2 or higher. Higher is specifically
+recommended. `nvcc` should be available on the PATH, or otherwise `CUDACXX`
+should be set to point to it.
+
+A C++ compiler is required, compatible with your version of CUDA (e.g. CUDA
+12.2 is not compatible with GCC>12). Some C++ library dependencies are
+downloaded automatically. as are some external libraries. To download all the
+non-automatic dependencies as a conda environment:
+
+```
+mamba create -p ./ENV cmake cxx-compiler cppzmq 'hdf5>1.12' lz4-c
+```
+
+---
+
+# Old: Morgul Python - Software For Jungfrau Commissioning
 
 Morgul is a software tool to assist with our commissioning efforts for the
 Junfrau 1M detector.

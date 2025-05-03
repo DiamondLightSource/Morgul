@@ -66,7 +66,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 find_package(LZ4 REQUIRED)
-find_package(CUDAToolkit REQUIRED)
+find_package(CUDAToolkit 12.2 REQUIRED)
 find_package(HDF5 REQUIRED)
 find_package(lodepng REQUIRED)
 find_package(cppzmq REQUIRED)
