@@ -14,6 +14,15 @@ include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 include(EnsureSubmodule)
 
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64)
+#target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
+    message(STATUS "Detected aarch64; setting native CPU")
+#    add_compile_options($<$<OR:$<COMPILE_LANGUAGE:CXX>>:-Ofast>)
+    add_compile_options($<$<OR:$<COMPILE_LANGUAGE:CUDA>,$<COMPILE_LANGUAGE:CXX>>:-mcpu=native>)
+    list(REMOVE_ITEM CXX_FLAGS_RELWITHDEBINFO -O2)
+    list(REMOVE_ITEM CUDA_FLAGS_RELWITHDEBINFO -O2)
+endif()
+
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)
