@@ -36,7 +36,7 @@ FetchContent_MakeAvailable(fmt)
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
+    GIT_TAG        v3.12.0
     FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(nlohmann_json)
