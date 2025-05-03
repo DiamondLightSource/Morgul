@@ -89,6 +89,7 @@ add_library(
     cuda/hdf5_tools.cxx
     cuda/live.cxx
     cuda/kernels.cu
+    cuda/pedestal.cxx
 )
 target_link_libraries(
     libmorgul

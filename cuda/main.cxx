@@ -55,6 +55,9 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
 
     parser.add_subparser(live_parser);
 
+    auto pedestal_parser = argparse::ArgumentParser("pedestal");
+    parser.add_subparser(pedestal_parser);
+
     auto cuargs = parser.parse_args(argc, argv);
     args.verbose = cuargs.verbose;
     args.cuda_device_index = cuargs.device_index;
@@ -72,6 +75,8 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         args.command = {"correct"};
     } else if (parser.is_subcommand_used(live_parser)) {
         args.command = {"live"};
+    } else if (parser.is_subcommand_used(pedestal_parser)) {
+        args.command = {"pedestal"};
     } else {
         print("{}\n", parser.help().str());
         std::exit(1);
@@ -96,6 +101,8 @@ int main(int argc, char **argv) {
         do_correct(args);
     } else if (args.command == "live") {
         do_live(args);
+    } else if (args.command == "pedestal") {
+        do_pedestal(args);
     }
 
     return 0;

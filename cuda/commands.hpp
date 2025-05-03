@@ -22,3 +22,4 @@ struct Arguments {
 
 auto do_correct(Arguments &args) -> void;
 auto do_live(Arguments &args) -> void;
+auto do_pedestal(Arguments &args) -> void;
