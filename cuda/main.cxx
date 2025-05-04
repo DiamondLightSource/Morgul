@@ -9,6 +9,7 @@
 #include "cuda_common.hpp"
 
 using namespace fmt;
+using namespace std::literals::string_literals;
 
 /// Parse the CLI arguments into an easily-passable arguments object
 auto do_argument_parsing(int argc, char **argv) -> Arguments {
@@ -56,6 +57,28 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
     parser.add_subparser(live_parser);
 
     auto pedestal_parser = argparse::ArgumentParser("pedestal");
+    pedestal_parser.add_argument("SOURCES")
+        .help("Raw data files to use as the source of pedestal data")
+        .nargs(argparse::nargs_pattern::at_least_one)
+        .store_into(args.sources);
+    pedestal_parser.add_argument("-l", "--loops")
+        .help("The number of loops per gain mode")
+        .default_value(static_cast<size_t>(200))
+        .store_into(args.pedestal.loops)
+        .metavar("NUM");
+    pedestal_parser.add_argument("-f", "--frames")
+        .help(
+            "The number of frames in a single loop. The last frame will be in the "
+            "special gain mode.")
+        .default_value(static_cast<size_t>(20))
+        .store_into(args.pedestal.frames)
+        .metavar("NUM");
+    pedestal_parser.add_argument("-o")
+        .help("Output file to write pedestal tables to")
+        .default_value("pedestal.h5"s)
+        .store_into(args.pedestal.output_filename)
+        .metavar("FILENAME");
+
     parser.add_subparser(pedestal_parser);
 
     auto cuargs = parser.parse_args(argc, argv);

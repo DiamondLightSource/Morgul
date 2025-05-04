@@ -18,6 +18,13 @@ struct Arguments {
     uint16_t zmq_listeners;
     uint16_t zmq_timeout;
     uint16_t zmq_send_port;
+
+    struct PedestalArguments {
+        size_t loops;
+        size_t frames;
+        std::string output_filename;
+    };
+    PedestalArguments pedestal;
 };
 
 auto do_correct(Arguments &args) -> void;
