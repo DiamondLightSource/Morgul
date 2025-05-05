@@ -65,7 +65,7 @@ parser.add_argument(
     type=Path,
 )
 parser.add_argument(
-    "--morgul", type=Path, help="Location of the morgul-cuda executable"
+    "--morgul", type=Path, help="Location of the morgul-cuda executable", default=MORGUL
 )
 
 args = parser.parse_args()
