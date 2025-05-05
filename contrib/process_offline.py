@@ -253,7 +253,7 @@ def run():
         str(SEND_PORT),
         str(len(senders)),
     ]
-    print("+ " + shlex.join(cmd))
+    print("+ " + shlex.join(str(x) for x in cmd))
     morgul_live = subprocess.Popen(args=cmd)
     # Wait for this to be ready.. Just a guess as ZMQ makes this a bit opaque
     time.sleep(2)
