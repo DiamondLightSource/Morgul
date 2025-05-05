@@ -182,6 +182,8 @@ hdf5_write_lock = threading.Lock()
 class Sink(threading.Thread):
     """Receive frames from morgul and write them to file, like the IOC."""
 
+    file: h5py.File | None
+
     def __init__(self, port: int, num_images: int, *, ignore: int = 0):
         super().__init__()
         self.num_images = num_images
