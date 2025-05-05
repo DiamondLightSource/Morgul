@@ -179,7 +179,7 @@ def _apply_single_to_node(
         pass
     else:
         raise RuntimeError(
-            f"Do not know how to handle field type: {type(value)} on path {'/'.join(path+[name])}"
+            f"Do not know how to handle field type: {type(value)} on path {'/'.join(path + [name])}"
         )
 
 
@@ -388,11 +388,11 @@ class JF1MD:
 
 def nxmx(
     input: Annotated[list[Path], typer.Argument()],
+    rotation_angle: Annotated[float, typer.Option("--rotation")],
     output: Annotated[Path, typer.Option("-o", "--output")] = Path("output.h5"),
     energy: Annotated[
         float | None, typer.Option("-e", "--energy", help="Energy of the beam, in keV")
     ] = None,
-    rotation_angle: Annotated[float | None, typer.Option("--rotation")] = None,
 ):
     """Create an NXmx Nexus file pointing to corrected Jungfrau data."""
 
