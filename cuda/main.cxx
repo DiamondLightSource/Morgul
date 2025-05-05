@@ -53,6 +53,10 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .default_value(static_cast<decltype(Arguments::zmq_send_port)>(31001))
         .store_into(args.zmq_send_port)
         .metavar("NUM");
+    live_parser.add_argument("--no-progress")
+        .help("Don't show progress messages or spinners")
+        .flag()
+        .store_into(args.no_progress);
 
     parser.add_subparser(live_parser);
 

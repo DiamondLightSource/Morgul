@@ -244,6 +244,7 @@ def run():
         "--detector",
         args.detector,
         "live",
+        "--no-progress",
         "--zmq-host",
         "localhost",
         "--zmq-port",

@@ -7,6 +7,7 @@
 
 struct Arguments {
     bool verbose = false;
+    bool no_progress = false;
     int cuda_device_index = 0;
 
     std::string command;

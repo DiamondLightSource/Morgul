@@ -866,13 +866,16 @@ auto do_live(Arguments &args) -> void {
             pthread_setname_np(thread.native_handle(), name.c_str());
         }
         while (true) {
-            if (threads_waiting == args.zmq_listeners) {
-                spinner("All listeners waiting");
-            } else {
-                auto msg = fmt::format("  Progress {:3}: {:3.2f} %                  \r",
-                                       acquisition_number,
-                                       acq_progress);
-                std::cout << msg << std::flush;
+            if (!args.no_progress) {
+                if (threads_waiting == args.zmq_listeners) {
+                    spinner("All listeners waiting");
+                } else {
+                    auto msg =
+                        fmt::format("  Progress {:3}: {:3.2f} %                  \r",
+                                    acquisition_number,
+                                    acq_progress);
+                    std::cout << msg << std::flush;
+                }
             }
             std::this_thread::sleep_for(80ms);
         }
