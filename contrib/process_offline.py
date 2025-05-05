@@ -6,6 +6,7 @@
 #     "hdf5plugin",
 #     "numpy",
 #     "rich",
+#     "tqdm",
 #     "zmq",
 # ]
 # ///
@@ -26,6 +27,7 @@ import hdf5plugin  # noqa: F401
 import numpy as np
 import zmq
 from rich import print
+from tqdm import tqdm
 
 # Basic ports for internal send/recv
 SEND_PORT = 30001
@@ -287,7 +289,7 @@ def run():
     }
     try:
         # Send all the pedestal data
-        for i in range(pedestal_frames):
+        for i in tqdm(range(pedestal_frames), desc="Pedestals"):
             for sock, ped in zip(senders, [pedestal_info[x] for x in send_order]):
                 frame_data = ped.data[i].tobytes()
                 header = base_header | {
@@ -319,7 +321,7 @@ def run():
         time.sleep(2)
 
         # Now send the data frames
-        for i in range(data_frames):
+        for i in tqdm(range(data_frames), desc="Data"):
             for sock, data in zip(senders, [data_info[x] for x in send_order]):
                 # print(i, data)
                 frame_data = data.data[i].tobytes()
