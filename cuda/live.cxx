@@ -381,6 +381,10 @@ class DataStreamHandler {
     uint64_t hm_frameNumber = 0;
     uint64_t exposure_ns = 0;
     bool is_pedestal_mode = false;
+    /// Should we attempt to send packets onward to a writer.
+    ///
+    /// Turned off for the acquisition on send error to the writer.
+    bool send_onwards = true;
 
     DataStreamHandler(const Arguments &args,
                       uint16_t port,
@@ -649,7 +653,14 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_msgs.push_back(zmq::message_t(send_header.dump()));
     send_msgs.push_back(zmq::message_t(compression_buffer.data(), current_index));
     auto time_push = Timer();
-    zmq::send_multipart(send, send_msgs);
+    if (send_onwards && zmq::send_multipart(send, send_msgs) == std::nullopt) {
+        print(style::warning,
+              "{}: Warning: Failed to send onward message. Disabling send until end of "
+              "acquisition.\n",
+              _port);
+        // Don't send any more this acquisition.
+        send_onwards = false;
+    }
     stats_push += time_push.get_elapsed_seconds();
     stats_process_frame_time += time_frame.get_elapsed_seconds();
 }
@@ -687,6 +698,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     num_images_seen = 0;
     highest_image_seen = 0;
     is_pedestal_mode = false;
+    send_onwards = true;
     exposure_ns = 0;
 }
 
@@ -713,6 +725,7 @@ auto zmq_listen(std::stop_token stop,
     zmq::socket_t send{ctx, zmq::socket_type::push};
     send.set(zmq::sockopt::sndhwm, 50000);
     send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
+    send.set(zmq::sockopt::sndtimeo, 10000);
     send.bind(
         fmt::format("tcp://0.0.0.0:{}", port - args.zmq_port + args.zmq_send_port));
 
