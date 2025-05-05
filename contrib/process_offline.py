@@ -34,7 +34,7 @@ SEND_PORT = 30001
 RECV_PORT = 31001
 h5_compression = {"compression": 32008, "compression_opts": (0, 2)}
 
-MORGUL = shutil.which("morgul-cuda") or "/scratch/nickd/morgul/_build/morgul-cuda"
+MORGUL = Path(shutil.which("morgul-cuda") or "/scratch/nickd/morgul/_build/morgul-cuda")
 
 
 class FileInfo(NamedTuple):
