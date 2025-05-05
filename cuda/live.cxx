@@ -807,7 +807,6 @@ auto zmq_listen(std::stop_token stop,
             print("Acquisition {} complete in {:.2f}S\n",
                   acquisition_number,
                   time_acq.value().get_elapsed_seconds());
-            std::exit(0);
             ++acquisition_number;
             acq_progress = 0;
             if (was_pedestals) {
