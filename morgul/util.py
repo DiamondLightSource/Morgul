@@ -22,7 +22,7 @@ GRAY = "\033[37m"
 def elapsed_time_string(start_time: float) -> str:
     elapsed_time = time.monotonic() - start_time
     if elapsed_time > 60:
-        return f"{G}{elapsed_time//60:.0f}m {elapsed_time%60:.0f}s{NC}"
+        return f"{G}{elapsed_time // 60:.0f}m {elapsed_time % 60:.0f}s{NC}"
     else:
         return f"{G}{elapsed_time:.1f}s{NC}"
 

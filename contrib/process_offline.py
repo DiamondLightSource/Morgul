@@ -224,9 +224,9 @@ def run():
         gain_mode=only({x.gainmode for x in data_info.values()}),
         num_images=data_frames,
     )
-    assert common.exptime == only(
-        {x.exptime for x in data_info.values()}
-    ), "Data/Pedestal exposure time mismatch"
+    assert common.exptime == only({x.exptime for x in data_info.values()}), (
+        "Data/Pedestal exposure time mismatch"
+    )
     print(f"Read exposure time: {common.exptime}")
 
     # print(matched_data)

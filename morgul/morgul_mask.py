@@ -47,9 +47,9 @@ def _calculate(
     square = numpy.zeros(shape=(s[1], s[2]), dtype=numpy.float64)
 
     gain_mode = h5["gainmode"][()].decode()
-    assert (
-        gain_mode == "dynamic"
-    ), f"Data with gain mode 'dynamic' (this is {gain_mode}) required for mask calculation"
+    assert gain_mode == "dynamic", (
+        f"Data with gain mode 'dynamic' (this is {gain_mode}) required for mask calculation"
+    )
 
     # compute sum, sum of squares down stack
     for j in tqdm.tqdm(range(data.shape[0]), desc=progress_desc or "Mask", leave=False):
@@ -163,7 +163,7 @@ def mask(
 
             if not pedestals.has_pedestal(exposure_time, module):
                 logger.error(
-                    f"Error: No data in pedestal file for module {module} for exposure {exposure_time*1000:g} ms"
+                    f"Error: No data in pedestal file for module {module} for exposure {exposure_time * 1000:g} ms"
                 )
                 raise typer.Abort()
 
@@ -174,7 +174,7 @@ def mask(
                 raise typer.Abort()
 
             logger.info(
-                f"Generating mask for {B}{filename}{NC}, module {G}{module}{NC} at {G}{exposure_time*1000:g}{NC} ms"
+                f"Generating mask for {B}{filename}{NC}, module {G}{module}{NC} at {G}{exposure_time * 1000:g}{NC} ms"
             )
             # We know that we have data for this flatfield. Do the masking calculation.
             # _calculate(h5, pedestals[exposure_time, module], gain_maps[module], energy)
@@ -199,7 +199,7 @@ def mask(
                 sorted(timestamps)[0]
             ).strftime("%Y-%m-%d_%H-%M-%S")
             output = output or Path(
-                f"{detector.value}_{exposure_time*1000:g}ms_{timestamp_name}_mask.h5"
+                f"{detector.value}_{exposure_time * 1000:g}ms_{timestamp_name}_mask.h5"
             )
             with h5py.File(output, "w") as h5_out:
                 h5_out.create_dataset("exptime", data=exposure_time)

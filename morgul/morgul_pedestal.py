@@ -63,9 +63,9 @@ def average_pedestal(
             parent_progress.update(1)
 
     # cope with zero valid observations
-    assert (
-        numpy.sum(n_obs) > 0
-    ), f"Error: Got completely blank pedestal in {progress_title}"
+    assert numpy.sum(n_obs) > 0, (
+        f"Error: Got completely blank pedestal in {progress_title}"
+    )
 
     mask = n_obs == 0
     n_obs[n_obs == 0] = 1
@@ -258,7 +258,7 @@ def pedestal(
             if exposure_time is None:
                 exposure_time = data.exptime
                 logger.info(
-                    f"Generating pedestals for exposure time: {G}{exposure_time*1000:g}{NC} ms"
+                    f"Generating pedestals for exposure time: {G}{exposure_time * 1000:g}{NC} ms"
                 )
             else:
                 # Validate that this file matches the previously determined exposure time
@@ -294,7 +294,7 @@ def pedestal(
             sorted(file_timestamps)[0]
         ).strftime("%Y-%m-%d_%H-%M-%S")
         output = output or Path(
-            f"{detector.value}_{exposure_time*1000:g}ms_{timestamp_name}_pedestal.h5"
+            f"{detector.value}_{exposure_time * 1000:g}ms_{timestamp_name}_pedestal.h5"
         )
         with h5py.File(output, "w") as f_output:
             write_pedestal_output(f_output, pedestal_data)
@@ -384,7 +384,7 @@ def pedestal_fudge(
     timestamp_name = sorted(timestamps)[0].strftime("%Y-%m-%d_%H-%M-%S")
     # Work out what the output filename is now
     output = output or Path(
-        f"{detector.value}_{exposure*1000:g}ms_{timestamp_name}_pedestal_fudged.h5"
+        f"{detector.value}_{exposure * 1000:g}ms_{timestamp_name}_pedestal_fudged.h5"
     )
     if output.exists() and not force:
         logger.error(
@@ -426,7 +426,7 @@ def pedestal_fudge(
         fout.create_dataset("exptime_original", data=fin["exptime"][()])
 
         logger.info(
-            f"Pedestal converted from {G}{fin['exptime'][()]*1000:g}{NC} ms to {G}{exposure*1000:g}{NC} ms and written to {B}{output}{NC}."
+            f"Pedestal converted from {G}{fin['exptime'][()] * 1000:g}{NC} ms to {G}{exposure * 1000:g}{NC} ms and written to {B}{output}{NC}."
         )
 
     if register:

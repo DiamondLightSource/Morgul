@@ -423,7 +423,7 @@ def correct(
                 )
                 if reader not in cached_pedestals:
                     logger.info(
-                        f"Reading {G}{exposure_time*1000:g}ms{NC} pedestals from: {B}{reader}{NC}"
+                        f"Reading {G}{exposure_time * 1000:g}ms{NC} pedestals from: {B}{reader}{NC}"
                     )
                     cached_pedestals[reader] = PedestalCorrections(detector, reader)
 
@@ -436,7 +436,7 @@ def correct(
                 )
                 if reader not in cached_maskers:
                     logger.info(
-                        f"Reading {G}{exposure_time*1000:g}ms{NC} mask from:        {B}{reader}{NC}"
+                        f"Reading {G}{exposure_time * 1000:g}ms{NC} mask from:        {B}{reader}{NC}"
                     )
                     cached_maskers[reader] = Masker(detector, reader)
                 mask_readers[filename] = cached_maskers[reader]
@@ -445,10 +445,10 @@ def correct(
             # could happen if the user requested a specific pedestal file
             if not pedestal_readers[filename].has_exposure(exposure_time):
                 availables = ", ".join(
-                    f"{x*1000:g}" for x in pedestal_readers[filename].exposure_times
+                    f"{x * 1000:g}" for x in pedestal_readers[filename].exposure_times
                 )
                 logger.error(
-                    f"Error: {filename} is exposure {exposure_time*1000:g} ms, only: {availables} ms available."
+                    f"Error: {filename} is exposure {exposure_time * 1000:g} ms, only: {availables} ms available."
                 )
                 raise typer.Abort()
 
@@ -457,10 +457,10 @@ def correct(
             if not no_mask and exposure_time not in (
                 exps := mask_readers[filename].exposure_times
             ):
-                availables = ", ".join(f"{x*1000:g}" for x in exps)
+                availables = ", ".join(f"{x * 1000:g}" for x in exps)
                 if availables:
                     logger.warning(
-                        f"Warning: Using masker time point {availables}ms instead of {exposure_time*1000:g}ms"
+                        f"Warning: Using masker time point {availables}ms instead of {exposure_time * 1000:g}ms"
                     )
 
             # Validate that the file is dynamic
@@ -488,7 +488,7 @@ def correct(
             out_filename = output_filename(filename, output)
             pre_msg = f"Processing {G}{data.shape[0]}{NC} images from module {G}{module}{NC} in "
             progress.write(
-                f"{pre_msg}{B}{filename}{NC}\n{' '*(len(strip_escapes(pre_msg))-5)}into {B}{out_filename}{NC}"
+                f"{pre_msg}{B}{filename}{NC}\n{' ' * (len(strip_escapes(pre_msg)) - 5)}into {B}{out_filename}{NC}"
             )
 
             # Safety check - don't overwrite if no --force

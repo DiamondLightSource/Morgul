@@ -177,7 +177,7 @@ class EmitHandler:
                 "│",
                 filename_trunc,
                 entry["gainmode"].ljust(13),
-                f"{entry['exptime']*1000:4g}ms",
+                f"{entry['exptime'] * 1000:4g}ms",
                 str(entry["nimage"]).ljust(6),
             ]
         )
@@ -348,7 +348,7 @@ def watch(
         if first_scan:
             first_scan = False
             print(f"    kept {G}{len(processed)}{NC} files.")
-            print(f"    done in {G}{1000*(time.monotonic()-start_time):g}{NC} ms")
+            print(f"    done in {G}{1000 * (time.monotonic() - start_time):g}{NC} ms")
             if not new_files:
                 print("No files found on first scan.")
             print()
