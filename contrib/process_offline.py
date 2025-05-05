@@ -29,8 +29,9 @@ from rich import print
 # Basic ports for internal send/recv
 SEND_PORT = 30001
 RECV_PORT = 31001
-MORGUL = "/scratch/nickd/morgul/_build/morgul-cuda"
 h5_compression = {"compression": 32008, "compression_opts": (0, 2)}
+
+MORGUL = shutil.which("morgul-cuda") or "/scratch/nickd/morgul/_build/morgul-cuda"
 
 parser = ArgumentParser()
 parser.add_argument(
@@ -63,8 +64,16 @@ parser.add_argument(
     dest="output",
     type=Path,
 )
+parser.add_argument(
+    "--morgul", type=Path, help="Location of the morgul-cuda executable"
+)
 
 args = parser.parse_args()
+
+if not args.morgul.is_file():
+    sys.exit(
+        "Error: Could not find morgul-cuda. Please add to PATH or pass as --morgul="
+    )
 
 context = zmq.Context()
 
