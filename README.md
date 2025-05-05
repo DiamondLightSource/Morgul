@@ -29,6 +29,8 @@ mamba install \
   pint pydantic napari rich
 ```
 
+And then `pip install -e <morgul folder>`.
+
 ---
 
 # Old: Morgul Python - Software For Jungfrau Commissioning
