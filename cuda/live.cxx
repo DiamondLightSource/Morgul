@@ -626,7 +626,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     size_t current_index = 12;
     for (size_t block = 0; block < HM_PIXELS * 2 / 8192; ++block) {
         auto size = LZ4_compress_default(
-            reinterpret_cast<char *>(bitshuffled_buffer.get() + block * 4096),
+            reinterpret_cast<char *>(bitshuffled_buffer.get() + 2 * block * 4096),
             reinterpret_cast<char *>(compression_buffer.data()) + current_index + 4,
             8192,
             compression_buffer.size() - current_index - 4);
