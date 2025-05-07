@@ -543,9 +543,9 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         } else {
             if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())) {
                 print(style::error,
-                      "Warning: Do not have pedestals for {} ms HMI={}, cannot "
+                      "Warning: Do not have pedestals for {:.2f} ms HMI={}, cannot "
                       "correct.\n",
-                      exposure_ns / 1000,
+                      exposure_ns / 1000000.0,
                       known_hmi.value());
                 return false;
             }
