@@ -39,6 +39,7 @@ std::stop_source global_stop;
 
 /// Count how many threads are waiting, so we know if everything is idle
 std::atomic_int threads_waiting{0};
+std::atomic_bool in_acquisition{false};
 /// Used to identify the first validation each acquisition, to avoid spamming
 std::atomic_bool is_first_validation_this_acquisition{false};
 std::atomic_int acquisition_number{0};
@@ -751,6 +752,7 @@ auto zmq_listen(std::stop_token stop,
             ++threads_waiting;
             const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
             --threads_waiting;
+            in_acquisition = true;
             if (!time_acq.has_value()) {
                 time_acq = {Timer()};
             }
@@ -804,6 +806,7 @@ auto zmq_listen(std::stop_token stop,
         handler.end_acquisition();
         // Now, wait until all frames have completed
         sync_barrier.arrive_and_wait();
+        in_acquisition = false;
         print(
             "{}: Time waiting for LZ4: {:.2f}S Process: {:.2f}S Push: {:.2f}S Frame: "
             "{:.2f}S Wait: {:.2f}S Corr: {:.2f}S BS: {:.2f}S\n",
@@ -880,7 +883,7 @@ auto do_live(Arguments &args) -> void {
         }
         while (true) {
             if (!args.no_progress) {
-                if (threads_waiting == args.zmq_listeners) {
+                if (threads_waiting == args.zmq_listeners && !in_acquisition) {
                     spinner("All listeners waiting");
                 } else {
                     auto msg =
