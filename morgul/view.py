@@ -24,6 +24,7 @@ class FileKind(enum.Enum):
     PEDESTAL = enum.auto()
     RAW = enum.auto()
     CORRECTED = enum.auto()
+    NXMX = enum.auto()
 
 
 ViewCallable: TypeAlias = Callable[[dict[Path, h5py.Group]], None]
@@ -240,7 +241,9 @@ def view(filenames: Annotated[list[Path], typer.Argument(help="Data files to vie
         common_kind = reduce(
             operator.and_, [determine_kinds(x) for x in open_files.values()]
         )
-        if not common_kind:
+        if not common_kind and len(filenames) == 1 and filenames[0].suffix == ".nxs":
+            pass
+        elif not common_kind:
             logger.error("Error: Could not determine common filekind for input files.")
             raise typer.Abort()
         kind = sorted(common_kind, key=lambda x: x.value)[-1]
