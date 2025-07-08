@@ -37,7 +37,13 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
             .default_value(0)
             .metavar("INDEX")
             .action([&](const std::string &value) {
-                _arguments.device_index = std::stoi(value);
+                try {
+                    _arguments.device_index = std::stoi(value);
+                } catch (std::invalid_argument const &ex) {
+                    fmt::print(
+                        "\033[1;31mError: CUDA device must be an integer\033[0m\n");
+                    std::exit(1);
+                }
                 return _arguments.device_index;
             });
         this->add_argument("--list-devices")
