@@ -240,7 +240,8 @@ GainData::GainData(std::filesystem::path path, Detector detector) : _path(path) 
         int glob_ret = glob(expected_map.c_str(), 0, nullptr, &glob_results);
         if (glob_ret != 0) {
             globfree(&glob_results);
-            throw std::runtime_error("glob for gain .bin failed");
+            throw std::runtime_error(
+                fmt::format("glob for gain '{}' failed", expected_map));
         }
         if (glob_results.gl_pathc > 1) {
             globfree(&glob_results);
