@@ -72,6 +72,9 @@ find_package(lodepng REQUIRED)
 find_package(cppzmq REQUIRED)
 
 ensure_submodule(modules/bitshuffle)
+ensure_submodule(modules/slsDetectorPackage)
+add_subdirectory(modules/slsDetectorPackage)
+
 add_library(
     bitshuffle
     modules/bitshuffle/src/bitshuffle.c
@@ -105,10 +108,12 @@ target_link_libraries(
     LZ4::LZ4
     nlohmann_json::nlohmann_json
     zeus::expected
+    slsReceiverShared
 )
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(libmorgul PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>")
+target_compile_options(libmorgul PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>")
 target_include_directories(libmorgul INTERFACE cuda)
 # target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
 

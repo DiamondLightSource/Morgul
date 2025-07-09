@@ -1,6 +1,7 @@
 
 #include <fmt/ranges.h>
 #include <pthread.h>
+#include <sls/Receiver.h>
 
 #include <array>
 #include <atomic>
@@ -844,7 +845,35 @@ auto zmq_listen(std::stop_token stop,
         time_acq = std::nullopt;
     }
 }
+//    sls::Receiver r(argc, argv);
+// auto zmq_listen(std::stop_token stop,
+//                 std::barrier<> &sync_barrier,
+//                 const Arguments &args,
+//                 const GainData &gains,
+//                 PedestalsLibrary &pedestals,
+//                 uint16_t port) -> void {
 
+auto start_receiver(std::stop_token stop,
+                    std::barrier<> &sync_barrier,
+                    const Arguments &args,
+                    const GainData &gains,
+                    PedestalsLibrary &pedestals,
+                    uint16_t port) -> void {
+    sls::Receiver r(port);
+
+    // // register call backs
+    // /** - Call back for start acquisition */
+    // std::cout << "Registering 	StartAcq()";
+    // r.registerCallBackStartAcquisition(StartAcq, nullptr);
+
+    // /** - Call back for acquisition finished */
+    // std::cout << "Registering 	AcquisitionFinished()";
+    // r.registerCallBackAcquisitionFinished(AcquisitionFinished, nullptr);
+
+    // /* 	- Call back for raw data */
+    // std::cout << "Registering GetData()";
+    // r.registerCallBackRawDataReady(GetData, nullptr);
+}
 #pragma region Launcher
 
 auto do_live(Arguments &args) -> void {
