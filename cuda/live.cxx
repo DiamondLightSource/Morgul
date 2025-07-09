@@ -190,6 +190,26 @@ void from_json(const json &j, DLSHeaderAdditions &d) {
     }
 }
 
+// struct startCallbackHeader {
+//     std::vector<uint32_t> udpPort;
+//     uint32_t dynamicRange;
+//     xy detectorShape;
+//     size_t imageSize;
+//     std::string filePath;
+//     std::string fileName;
+//     uint64_t fileIndex;
+//     bool quad;
+//     std::map<std::string, std::string> addJsonHeader;
+// };
+
+// SLSHeader SLSHeader::from_sls_start_header(
+//     slsDetectorDefs::startCallbackHeader &header) {
+//     return SLSHeader {
+//         .detshape = header.detectorShape,
+
+//     }
+// }
+
 void from_json(const json &j, SLSHeader &h) {
     j.at("jsonversion").get_to(h.jsonversion);
     j.at("bitmode").get_to(h.bitmode);
@@ -853,26 +873,131 @@ auto DataStreamHandler::end_acquisition() -> void {
 //                 PedestalsLibrary &pedestals,
 //                 uint16_t port) -> void {
 
+struct AcqContext {
+    uint16_t port;
+    zmq::socket_t &zmq_send;
+    DataStreamHandler &handler;
+};
+
+// ━  ┃  ┏ ┳ ┓ ┏ ┯ ┓ ┏ ┳ ┓ ┏ ┯ ┓
+// ┅  ┇  ┣ ╋ ┫ ┣ ┿ ┫ ┠ ╂ ┨ ┠ ┼ ┨
+// ┉  ┋  ┗ ┻ ┛ ┗ ┷ ┛ ┗ ┻ ┛ ┗ ┷ ┛
+
+int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPointer) {
+    auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
+    --threads_waiting;
+    print(
+        "┏━━ Start Acquisition on receiver TCP port: {}\n\
+┃ UDP Ports:      {}\n\
+┃ Dynamic Range:  {}\n\
+┃ Detector Shape: {} x {}\n\
+┃ File Path:      {}\n\
+┃ File Name:      {}\n\
+┃ File Index:     {}\n\
+┃ Quad:           {}\n\
+┗ Additional Header: {}\n",
+        ctx.port,
+        header.udpPort,
+        header.dynamicRange,
+        header.detectorShape.x,
+        header.detectorShape.y,
+        header.filePath,
+        header.fileName,
+        header.fileIndex,
+        header.quad,
+        header.addJsonHeader);
+
+    return 0;
+}
+//     LOG(sls::logINFOBLUE) << "#### Start Acquisition:" << "\n\t["
+//                           << "\n\tUDP Port : " << sls::ToString(callbackHeader.udpPort)
+//                           << "\n\tDynamic Range : " << callbackHeader.dynamicRange
+//                           << "\n\tDetector Shape : "
+//                           << sls::ToString(callbackHeader.detectorShape)
+//                           << "\n\tImage Size : " << callbackHeader.imageSize
+//                           << "\n\tFile Path : " << callbackHeader.filePath
+//                           << "\n\tFile Name : " << callbackHeader.fileName
+//                           << "\n\tFile Index : " << callbackHeader.fileIndex
+//                           << "\n\tQuad Enable : " << callbackHeader.quad
+//                           << "\n\tAdditional Json Header : "
+//                           << sls::ToString(callbackHeader.addJsonHeader) << "\n\t]";
+//     return 0;
+// }
+
+// /** Acquisition Finished Call back */
+void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer) {
+    auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
+    // std::vector<uint32_t> udpPort;
+    //         std::vector<uint64_t> completeFrames;
+    //         std::vector<uint64_t> lastFrameIndex;
+    print(
+        "┏━━ End Acquisition on receiver TCP port: {}\n"
+        "┃ UDP Ports:        {}\n"
+        "┃ Complete Frames:  {}\n"
+        "┗ Last Frame Index: {}\n",
+        ctx.port,
+        header.udpPort,
+        header.completeFrames,
+        header.lastFrameIndex);
+    ++threads_waiting;
+}
+//     LOG(sls::logINFOBLUE) << "#### AcquisitionFinished:" << "\n\t["
+//                           << "\n\tUDP Port : " << sls::ToString(callbackHeader.udpPort)
+//                           << "\n\tComplete Frames : "
+//                           << sls::ToString(callbackHeader.completeFrames)
+//                           << "\n\tLast Frame Index : "
+//                           << sls::ToString(callbackHeader.lastFrameIndex) << "\n\t]";
+// }
+
+// /**
+//  * Get Receiver Data Call back
+//  * Prints in different colors(for each receiver process) the different headers
+//  * for each image call back.
+//  */
+void GotData(slsDetectorDefs::sls_receiver_header &header,
+             slsDetectorDefs::dataCallbackHeader callbackHeader,
+             char *dataPointer,
+             size_t &imageSize,
+             void *objectPointer) {}
+
 auto start_receiver(std::stop_token stop,
                     std::barrier<> &sync_barrier,
                     const Arguments &args,
                     const GainData &gains,
                     PedestalsLibrary &pedestals,
                     uint16_t port) -> void {
+    // This will be handled in start/end acq callbacks
+    ++threads_waiting;
+
     sls::Receiver r(port);
 
-    // // register call backs
-    // /** - Call back for start acquisition */
-    // std::cout << "Registering 	StartAcq()";
-    // r.registerCallBackStartAcquisition(StartAcq, nullptr);
+    // For now, each thread gets it's own context. We can experiment
+    // with shared later. The Guide (not that one) suggests one IO
+    // thread per GB/s of data, and we have 2 GB/s per module (e.g.
+    // each IO thread can cope with one half-module).
+    zmq::context_t ctx;
+    zmq::socket_t send{ctx, zmq::socket_type::push};
+    send.set(zmq::sockopt::sndhwm, 50000);
+    send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
+    send.set(zmq::sockopt::sndtimeo, 10000);
+    send.bind(
+        fmt::format("tcp://0.0.0.0:{}", port - args.rx_port + args.zmq_send_port));
 
-    // /** - Call back for acquisition finished */
-    // std::cout << "Registering 	AcquisitionFinished()";
-    // r.registerCallBackAcquisitionFinished(AcquisitionFinished, nullptr);
+    CudaStream stream;
+    DataStreamHandler handler(args, port, stream, gains, pedestals, send);
 
-    // /* 	- Call back for raw data */
-    // std::cout << "Registering GetData()";
-    // r.registerCallBackRawDataReady(GetData, nullptr);
+    auto output_data = std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
+
+    AcqContext context{.port = port, .zmq_send = send, .handler = handler};
+
+    r.registerCallBackStartAcquisition(StartAcq, &context);
+    r.registerCallBackAcquisitionFinished(EndAcq, &context);
+    r.registerCallBackRawDataReady(GotData, &context);
+
+    // Keep the receiver alive as long as we aren't stopping
+    while (!stop.stop_requested()) {
+        std::this_thread::sleep_for(80ms);
+    }
 }
 #pragma region Launcher
 
@@ -899,7 +1024,7 @@ auto do_live(Arguments &args) -> void {
 
     auto pedestals = PedestalsLibrary(args.detector);
 
-    print("Listening on ports :{}-{}\n",
+    print("Starting up listeners on TCP ports {}-{}\n",
           args.rx_port,
           args.rx_port + args.rx_listeners - 1);
     if (!args.require_pedestals) {
