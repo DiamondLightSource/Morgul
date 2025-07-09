@@ -8,12 +8,9 @@
 #     "zmq",
 # ]
 # ///
-import json
 from argparse import ArgumentParser
 
-import h5py
 import hdf5plugin  # noqa: F401
-import numpy
 import zmq
 
 parser = ArgumentParser()
@@ -36,60 +33,16 @@ socket.connect(f"tcp://{host}:{port}")
 print("Connected.")
 total = args.num_images
 
-fout = h5py.File(f"data_{port}.h5", "w")
-
-data = fout.create_dataset(
-    "data",
-    shape=(total, 256, 1024),
-    chunks=(1, 256, 1024),
-    dtype=numpy.uint16,
-    # **compression,
-)
-
-# timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
-
-# try:
 print("Starting wait loop")
-# while True:
-# num_images = 0
-# try:
-#     while True:
-#         messages = socket.recv_multipart()
-#         num_images += 1
-#         socket.setsockopt(zmq.RCVTIMEO, 2000)
-# except zmq.Again:
-#     if num_images > 0:
-#         print(f"{port}: Got timeout waiting for more images; got {num_images}")
 
-for count in range(total):
+num = 0
+
+while True:
     messages = socket.recv_multipart()
-    # socket.setsockopt(zmq.RCVTIMEO, 2000)
-
-    header = json.loads(messages[0])
-    frame = header["frameIndex"]
-    offset = (frame, 0, 0)
-    if frame >= total:
-        print(f"Warning: Got frame {frame} above num_images total, expected {count}")
-        break
-    data.id.write_direct_chunk(offset, messages[1])
-    # timestamp[frame] = time.time()
-    if count == 0:
-        print(header)
-
-    if count == 0:
-        with open(f"raw_{port}.json", "wb") as f:
-            f.write(messages[0])
-        with open(f"raw_{port}.dat", "wb") as f:
-            f.write(messages[1])
-# except zmq.Again:
-#     print("Got timeout waiting for more images")
-# finally:
-#     fout.create_dataset(
-#         "timestamp", shape=(total,), data=timestamp, dtype=numpy.float64
-#     )
-
-fout.close()
-print("Closed data file")
+    if num < 100:
+        print(f"Got {num}")
+        num += 1
+    continue
 
 
 #!/usr/bin/env -S uv run --no-project --script

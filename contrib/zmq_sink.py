@@ -11,13 +11,12 @@
 from argparse import ArgumentParser
 
 import hdf5plugin  # noqa: F401
-import numpy
 import zmq
 
 parser = ArgumentParser()
 parser.add_argument("host", help="IP to connect to")
 parser.add_argument("port", help="TCP port to connect to", type=int)
-parser.add_argument("num_images", help="How many images to expect", type=int)
+# parser.add_argument("num_images", help="How many images to expect", type=int)
 args = parser.parse_args()
 
 host = args.host
@@ -30,7 +29,7 @@ socket = context.socket(zmq.PULL)
 socket.setsockopt(zmq.RCVHWM, 50000)
 socket.connect(f"tcp://{host}:{port}")
 
-total = args.num_images
+# total = args.num_images
 
 # fout = h5py.File(f"data_{port}.h5", "w")
 
@@ -42,15 +41,42 @@ total = args.num_images
 #     **compression,
 # )
 
-timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
+# timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
 
 # try:
+print(f"Waiting on port {port}", flush=True)
+
 while True:
-    try:
-        messages = socket.recv_multipart()
-        socket.setsockopt(zmq.RCVTIMEO, 2000)
-    except zmq.Again:
-        print("Got timeout waiting for more images")
+    num_images = 0
+    while True:
+        try:
+            messages = socket.recv_multipart()
+            socket.setsockopt(zmq.RCVTIMEO, 2000)
+            print("Got initial frame", messages[0], flush=True)
+            if len(messages) > 1:
+                num_images += 1
+            break
+        except zmq.Again:
+            pass
+
+    while True:
+        try:
+            messages = socket.recv_multipart()
+            socket.setsockopt(zmq.RCVTIMEO, 2000)
+            if len(messages) > 1:
+                num_images += 1
+            if len(messages) == 1:
+                print(f"Got image end packet. Saw {num_images} images.", flush=True)
+        except zmq.Again:
+            print(
+                f"Got timeout waiting for more images. Saw {num_images} images",
+                flush=True,
+            )
+            break
+
+    # print(f"seen frame {num}", flush=True)
+    # if not seen_frames:
+    #     print("Seen Frame)
 
 #     for count in range(total):
 #         messages = socket.recv_multipart()
