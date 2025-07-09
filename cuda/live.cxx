@@ -543,12 +543,24 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
             }
         } else {
             if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())) {
-                print(style::error,
+                print(_args.require_pedestals ? style::error : style::warning,
                       "Warning: Do not have pedestals for {:.2f} ms HMI={}, cannot "
                       "correct.\n",
                       exposure_ns / 1000000.0,
                       known_hmi.value());
-                return false;
+                if (_args.require_pedestals) {
+                    return false;
+                }
+                // We aren't *requiring* pedestals, but we need to have some
+                std::vector<PedestalsLibrary::pedestal_t> fake_pedestals(
+                    HM_PIXELS * GAIN_MODES.size());
+
+                pedestals.register_pedestals(
+                    exposure_ns,
+                    known_hmi.value(),
+                    {fake_pedestals.data(), HM_PIXELS},
+                    {fake_pedestals.data() + HM_PIXELS, HM_PIXELS},
+                    {fake_pedestals.data() + HM_PIXELS * 2, HM_PIXELS});
             }
         }
     }
@@ -864,6 +876,7 @@ auto do_live(Arguments &args) -> void {
                              args.zmq_port,
                              args.zmq_port + args.zmq_listeners - 1),
                  style::url));
+    print("Require pedestals: {}\n", args.require_pedestals);
     // Now we know how many workers, we can construct the global barrier
     auto barrier = std::barrier{args.zmq_listeners};
     {

@@ -26,6 +26,7 @@ struct Arguments {
         std::string output_filename;
     };
     PedestalArguments pedestal;
+    bool require_pedestals = true;
 };
 
 auto do_correct(Arguments &args) -> void;

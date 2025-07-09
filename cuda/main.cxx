@@ -57,7 +57,11 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         .help("Don't show progress messages or spinners")
         .flag()
         .store_into(args.no_progress);
-
+    live_parser.add_argument("--no-require-pedestals")
+        .help("Allows 'correcting' data without pedestals, for testing purposes.")
+        .default_value(true)
+        .implicit_value(false)
+        .store_into(args.require_pedestals);
     parser.add_subparser(live_parser);
 
     auto pedestal_parser = argparse::ArgumentParser("pedestal");
@@ -108,6 +112,8 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
         print("{}\n", parser.help().str());
         std::exit(1);
     }
+    // Don't know why this readout isn't working via store_into
+    args.require_pedestals = live_parser.get<bool>("--no-require-pedestals");
 
     return args;
 }
