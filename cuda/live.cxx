@@ -93,6 +93,17 @@ class Timer {
 
 #pragma region Header Parsing
 
+auto read_boolish(std::string value) -> bool {
+    if (value.size() == 0) {
+        return false;
+    }
+    if (value != "true" || value != "false") {
+        throw std::runtime_error(
+            fmt::format("Got non-boolish json value for pedestal: '{}'", value));
+    }
+    return value == "true";
+}
+
 struct DLSHeaderAdditions {
     bool pedestal = false;
     /// @brief Photon Energy (KeV)
@@ -100,95 +111,120 @@ struct DLSHeaderAdditions {
     bool raw = false;
     std::optional<size_t> pedestal_frames;
     std::optional<size_t> pedestal_loops;
+
+    static auto from_map(const std::map<std::string, std::string> raw)
+        -> DLSHeaderAdditions {
+        DLSHeaderAdditions out;
+        if (raw.find("pedestal") != raw.end()) {
+            out.pedestal = read_boolish(raw.at("pedestal"));
+        }
+        if (raw.find("raw") != raw.end()) {
+            out.raw = read_boolish(raw.at("raw"));
+        }
+        if (raw.find("wavelength") != raw.end()) {
+            auto value = raw.at("wavelength");
+            double wavelength_angstrom = std::strtod(value.c_str(), nullptr) * 10;
+            double energy_kev = 12.39841984055037 / wavelength_angstrom;
+            out.energy = energy_kev;
+        }
+        if (raw.find("pedestal_frames") != raw.end()) {
+            out.pedestal_frames = {
+                static_cast<size_t>(std::stoi(raw.at("pedestal_frames")))};
+        }
+        if (raw.find("pedestal_loops") != raw.end()) {
+            out.pedestal_loops = {
+                static_cast<size_t>(std::stoi(raw.at("pedestal_loops")))};
+        }
+        return out;
+    }
 };
 
 class SLSHeader {
   public:
-    uint32_t jsonversion;
+    // uint32_t jsonversion;
     uint32_t bitmode;
-    uint64_t fileIndex;
+    // uint64_t fileIndex;
     std::array<uint32_t, 2> detshape;
     std::array<uint32_t, 2> shape;
-    uint32_t size;
+    // uint32_t size;
     size_t acqIndex;
     /// Index of this frame in the current acquisition e.g. 0....N-1
     size_t frameIndex;
     double progress;
-    std::string fname;
-    uint32_t data;
-    uint32_t completeImage;
+    // std::string fname;
+    // uint32_t data;
+    // uint32_t completeImage;
     /// The number of frames since the detector count was reset - NOT frame index
     size_t frameNumber;
     uint32_t expLength;
     uint32_t packetNumber;
-    uint32_t timestamp;
-    uint32_t modId;
+    // uint32_t timestamp;
+    // uint32_t modId;
     uint32_t row;
     uint32_t column;
-    uint64_t detSpec1;
-    uint32_t detSpec2;
-    uint32_t detSpec3;
-    uint32_t detSpec4;
+    // uint64_t detSpec1;
+    // uint32_t detSpec2;
+    // uint32_t detSpec3;
+    // uint32_t detSpec4;
     uint32_t detType;
-    uint32_t version;
-    uint32_t flipRows;
-    uint32_t quad;
-    std::optional<json> addJsonHeader;
+    // uint32_t version;
+    // uint32_t flipRows;
+    // uint32_t quad;
+    std::map<std::string, std::string> addJsonHeader;
     /// DLS-specific additional headers that may be present in addJsonHeader
     DLSHeaderAdditions dls;
-    json raw_header;
 };
 
-bool read_boolish_json(const json &j, const std::string_view &name) {
-    if (!j.contains(name)) {
-        return false;
-    }
-    auto v = j[name];
-    if (v.is_boolean()) {
-        return v.template get<bool>();
-    }
-    if (v.is_string()) {
-        auto value = v.template get<std::string>();
-        if (value.empty() || value == "false") {
-            return false;
-        } else if (value == "true") {
-            return true;
-        }
-        throw std::runtime_error(
-            fmt::format("Got non-boolish json value: '{}'", value));
-    }
-    if (v.empty() || v.is_null()) {
-        return false;
-    }
-    uint8_t type = (uint8_t)v.type();
+// bool read_boolish_json(const json &j, const std::string_view &name) {
+//     if (!j.contains(name)) {
+//         return false;
+//     }
+//     auto v = j[name];
+//     if (v.is_boolean()) {
+//         return v.template get<bool>();
+//     }
+//     if (v.is_string()) {
+//         auto value = v.template get<std::string>();
+//         if (value.empty() || value == "false") {
+//             return false;
+//         } else if (value == "true") {
+//             return true;
+//         }
+//         throw std::runtime_error(
+//             fmt::format("Got non-boolish json value: '{}'", value));
+//     }
+//     if (v.empty() || v.is_null()) {
+//         return false;
+//     }
+//     uint8_t type = (uint8_t)v.type();
 
-    throw std::runtime_error(
-        fmt::format("Cannot handle as boolish json value {}: '{}'", type, v.dump()));
-}
-template <typename T>
-auto read_json_number(const json &j) {
-    if (j.is_string()) {
-        return static_cast<T>(std::stoi(j.template get<std::string>()));
-    }
-    return j.template get<T>();
-}
+//     throw std::runtime_error(
+//         fmt::format("Cannot handle as boolish json value {}: '{}'", type, v.dump()));
+// }
+// template <typename T>
+// auto read_json_number(const json &j) {
+//     if (j.is_string()) {
+//         return static_cast<T>(std::stoi(j.template get<std::string>()));
+//     }
+//     return j.template get<T>();
+// }
 
-void from_json(const json &j, DLSHeaderAdditions &d) {
-    d.pedestal = read_boolish_json(j, "pedestal");
-    d.raw = read_boolish_json(j, "raw");
-    if (j.contains("wavelength")) {
-        auto value = j.at("wavelength").template get<std::string>();
-        double wavelength_angstrom = std::strtod(value.c_str(), nullptr) * 10;
-        double energy_kev = 12.39841984055037 / wavelength_angstrom;
-        d.energy = energy_kev;
-    }
-    if (j.contains("pedestal_frames")) {
-        d.pedestal_frames = {read_json_number<size_t>(j["pedestal_frames"])};
-    }
-    if (j.contains("pedestal_loops")) {
-        d.pedestal_loops = {read_json_number<size_t>(j["pedestal_loops"])};
-    }
-}
+// void from_json(const json &j, DLSHeaderAdditions &d) {
+//     d.pedestal = read_boolish_json(j, "pedestal");
+//     d.raw = read_boolish_json(j, "raw");
+//     if (j.contains("wavelength")) {
+//         auto value = j.at("wavelength").template get<std::string>();
+//         double wavelength_angstrom = std::strtod(value.c_str(), nullptr) * 10;
+//         double energy_kev = 12.39841984055037 / wavelength_angstrom;
+//         d.energy = energy_kev;
+//     }
+//     if (j.contains("pedestal_frames")) {
+//         d.pedestal_frames = {read_json_number<size_t>(j["pedestal_frames"])};
+//     }
+//     if (j.contains("pedestal_loops")) {
+//         d.pedestal_loops = {read_json_number<size_t>(j["pedestal_loops"])};
+//     }
+// }
 
 // struct startCallbackHeader {
 //     std::vector<uint32_t> udpPort;
@@ -210,42 +246,42 @@ void from_json(const json &j, DLSHeaderAdditions &d) {
 //     }
 // }
 
-void from_json(const json &j, SLSHeader &h) {
-    j.at("jsonversion").get_to(h.jsonversion);
-    j.at("bitmode").get_to(h.bitmode);
-    j.at("fileIndex").get_to(h.fileIndex);
-    j.at("size").get_to(h.size);
-    j.at("acqIndex").get_to(h.acqIndex);
-    j.at("frameIndex").get_to(h.frameIndex);
-    j.at("progress").get_to(h.progress);
-    j.at("fname").get_to(h.fname);
-    j.at("data").get_to(h.data);
-    j.at("completeImage").get_to(h.completeImage);
-    j.at("frameNumber").get_to(h.frameNumber);
-    j.at("expLength").get_to(h.expLength);
-    j.at("packetNumber").get_to(h.packetNumber);
-    j.at("timestamp").get_to(h.timestamp);
-    j.at("modId").get_to(h.modId);
-    j.at("row").get_to(h.row);
-    j.at("column").get_to(h.column);
-    j.at("detSpec1").get_to(h.detSpec1);
-    j.at("detSpec2").get_to(h.detSpec2);
-    j.at("detSpec3").get_to(h.detSpec3);
-    j.at("detSpec4").get_to(h.detSpec4);
-    j.at("detType").get_to(h.detType);
-    j.at("version").get_to(h.version);
-    j.at("flipRows").get_to(h.flipRows);
-    j.at("quad").get_to(h.quad);
-    j.at("detshape")[0].get_to(h.detshape[0]);
-    j.at("detshape")[1].get_to(h.detshape[1]);
-    j.at("shape")[0].get_to(h.shape[0]);
-    j.at("shape")[1].get_to(h.shape[1]);
-    if (j.contains("addJsonHeader")) {
-        h.addJsonHeader = j.at("addJsonHeader");
-        h.dls = j["addJsonHeader"].template get<DLSHeaderAdditions>();
-    }
-    h.raw_header = j;
-}
+// void from_json(const json &j, SLSHeader &h) {
+//     j.at("jsonversion").get_to(h.jsonversion);
+//     j.at("bitmode").get_to(h.bitmode);
+//     j.at("fileIndex").get_to(h.fileIndex);
+//     j.at("size").get_to(h.size);
+//     j.at("acqIndex").get_to(h.acqIndex);
+//     j.at("frameIndex").get_to(h.frameIndex);
+//     j.at("progress").get_to(h.progress);
+//     j.at("fname").get_to(h.fname);
+//     j.at("data").get_to(h.data);
+//     j.at("completeImage").get_to(h.completeImage);
+//     j.at("frameNumber").get_to(h.frameNumber);
+//     j.at("expLength").get_to(h.expLength);
+//     j.at("packetNumber").get_to(h.packetNumber);
+//     j.at("timestamp").get_to(h.timestamp);
+//     j.at("modId").get_to(h.modId);
+//     j.at("row").get_to(h.row);
+//     j.at("column").get_to(h.column);
+//     j.at("detSpec1").get_to(h.detSpec1);
+//     j.at("detSpec2").get_to(h.detSpec2);
+//     j.at("detSpec3").get_to(h.detSpec3);
+//     j.at("detSpec4").get_to(h.detSpec4);
+//     j.at("detType").get_to(h.detType);
+//     j.at("version").get_to(h.version);
+//     j.at("flipRows").get_to(h.flipRows);
+//     j.at("quad").get_to(h.quad);
+//     j.at("detshape")[0].get_to(h.detshape[0]);
+//     j.at("detshape")[1].get_to(h.detshape[1]);
+//     j.at("shape")[0].get_to(h.shape[0]);
+//     j.at("shape")[1].get_to(h.shape[1]);
+//     if (j.contains("addJsonHeader")) {
+//         h.addJsonHeader = j.at("addJsonHeader");
+//         h.dls = j["addJsonHeader"].template get<DLSHeaderAdditions>();
+//     }
+//     h.raw_header = j;
+// }
 #pragma endregion
 
 #pragma region Pedestal Library
@@ -680,7 +716,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["frameIndex"] = header.frameIndex;
     send_header["row"] = header.row;
     send_header["column"] = header.column;
-    send_header["shape"] = header.raw_header["shape"];
+    send_header["shape"] = header.shape;
     send_header["bitmode"] = header.bitmode;
     send_header["expLength"] = header.expLength;
     send_header["acquisition"] = acquisition_number.load();
@@ -877,6 +913,9 @@ struct AcqContext {
     uint16_t port;
     zmq::socket_t &zmq_send;
     DataStreamHandler &handler;
+    // Information to store from start acquisition
+    uint32_t bitmode;
+    std::array<uint32_t, 2> detshape;
 };
 
 // ━  ┃  ┏ ┳ ┓ ┏ ┯ ┓ ┏ ┳ ┓ ┏ ┯ ┓
@@ -907,6 +946,9 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
         header.quad,
         header.addJsonHeader);
 
+    ctx.bitmode = header.dynamicRange;
+    ctx.detshape = {static_cast<uint32_t>(header.detectorShape.x),
+                    static_cast<uint32_t>(header.detectorShape.y)};
     return 0;
 }
 //     LOG(sls::logINFOBLUE) << "#### Start Acquisition:" << "\n\t["
@@ -949,6 +991,27 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
 //                           << sls::ToString(callbackHeader.lastFrameIndex) << "\n\t]";
 // }
 
+auto header_from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader,
+                           const slsDetectorDefs::dataCallbackHeader &dataHeader,
+                           const AcqContext &ctx) -> SLSHeader {
+    SLSHeader out;
+    out.acqIndex = dataHeader.acqIndex;
+    out.addJsonHeader = dataHeader.addJsonHeader;
+    out.bitmode = ctx.bitmode;
+    out.column - recHeader.detHeader.column;
+    out.detshape = ctx.detshape;
+    out.detType = recHeader.detHeader.detType;
+    out.dls = DLSHeaderAdditions::from_map(dataHeader.addJsonHeader);
+    out.expLength = recHeader.detHeader.expLength;
+    out.frameIndex = dataHeader.frameIndex;
+    out.frameNumber = recHeader.detHeader.frameNumber;
+    out.progress = dataHeader.progress;
+    out.row = recHeader.detHeader.row;
+    out.shape = {static_cast<uint32_t>(dataHeader.shape.x),
+                 static_cast<uint32_t>(dataHeader.shape.y)};
+
+    return out;
+}
 // /**
 //  * Get Receiver Data Call back
 //  * Prints in different colors(for each receiver process) the different headers
@@ -958,7 +1021,45 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
              slsDetectorDefs::dataCallbackHeader callbackHeader,
              char *dataPointer,
              size_t &imageSize,
-             void *objectPointer) {}
+             void *objectPointer) {
+    auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
+    auto sls_header = header_from_framedata(header, callbackHeader, ctx);
+
+    // sls_detector_header detHeader; /**< is the detector header */
+    //     sls_bitset packetsMask;        /**< is the packets caught bit mask */
+    //         typedef struct {
+    //     uint64_t frameNumber;
+    //     uint32_t expLength;
+    //     uint32_t packetNumber;
+    //     uint64_t detSpec1;
+    //     uint64_t timestamp;
+    //     uint16_t modId;
+    //     uint16_t row;
+    //     uint16_t column;
+    //     uint16_t detSpec2;
+    //     uint32_t detSpec3;
+    //     uint16_t detSpec4;
+    //     uint8_t detType;
+    //     uint8_t version;
+    // } sls_detector_header;
+    // struct dataCallbackHeader {
+    //     uint32_t udpPort;
+    //     xy shape;
+    //     uint64_t acqIndex;
+    //     uint64_t frameIndex;
+    //     double progress;
+    //     bool completeImage;
+    //     bool flipRows;
+    //     std::map<std::string, std::string> addJsonHeader;
+    // };
+    print(
+        "┏━━ Got Frame on receiver TCP port {}\n"
+        "┃ UDP Ports:        {}\n",
+        // "┃ Complete Frames:  {}\n"
+        // "┗ Last Frame Index: {}\n",
+        ctx.port,
+        callbackHeader.udpPort);
+}
 
 auto start_receiver(std::stop_token stop,
                     std::barrier<> &sync_barrier,
