@@ -718,133 +718,133 @@ auto DataStreamHandler::end_acquisition() -> void {
 
 #pragma region Main Loop
 
-auto zmq_listen(std::stop_token stop,
-                std::barrier<> &sync_barrier,
-                const Arguments &args,
-                const GainData &gains,
-                PedestalsLibrary &pedestals,
-                uint16_t port) -> void {
-    // For now, each thread gets it's own context. We can experiment
-    // with shared later. The Guide (not that one) suggests one IO
-    // thread per GB/s of data, and we have 2 GB/s per module (e.g.
-    // each IO thread can cope with one half-module).
-    zmq::context_t ctx;
+// auto zmq_listen(std::stop_token stop,
+//                 std::barrier<> &sync_barrier,
+//                 const Arguments &args,
+//                 const GainData &gains,
+//                 PedestalsLibrary &pedestals,
+//                 uint16_t port) -> void {
+//     // For now, each thread gets it's own context. We can experiment
+//     // with shared later. The Guide (not that one) suggests one IO
+//     // thread per GB/s of data, and we have 2 GB/s per module (e.g.
+//     // each IO thread can cope with one half-module).
+//     zmq::context_t ctx;
 
-    zmq::socket_t sub{ctx, zmq::socket_type::sub};
-    sub.connect(fmt::format("tcp://{}:{}", args.zmq_host, port));
-    sub.set(zmq::sockopt::subscribe, "");
+//     zmq::socket_t sub{ctx, zmq::socket_type::sub};
+//     sub.connect(fmt::format("tcp://{}:{}", args.zmq_host, port));
+//     sub.set(zmq::sockopt::subscribe, "");
 
-    // Set up the results sending port. Let's reuse the context, and
-    // we can wait and see if this needs more resources.
-    zmq::socket_t send{ctx, zmq::socket_type::push};
-    send.set(zmq::sockopt::sndhwm, 50000);
-    send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
-    send.set(zmq::sockopt::sndtimeo, 10000);
-    send.bind(
-        fmt::format("tcp://0.0.0.0:{}", port - args.zmq_port + args.zmq_send_port));
+//     // Set up the results sending port. Let's reuse the context, and
+//     // we can wait and see if this needs more resources.
+//     zmq::socket_t send{ctx, zmq::socket_type::push};
+//     send.set(zmq::sockopt::sndhwm, 50000);
+//     send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
+//     send.set(zmq::sockopt::sndtimeo, 10000);
+//     send.bind(
+//         fmt::format("tcp://0.0.0.0:{}", port - args.zmq_port + args.zmq_send_port));
 
-    CudaStream stream;
-    DataStreamHandler handler(args, port, stream, gains, pedestals, send);
+//     CudaStream stream;
+//     DataStreamHandler handler(args, port, stream, gains, pedestals, send);
 
-    auto output_data = std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
+//     auto output_data = std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
 
-    while (!stop.stop_requested()) {
-        // Make sure all of our threads are in the same phase
-        sync_barrier.arrive_and_wait();
-        // Wait for the next message. Count waiting so we know when we are idle.
-        // Between acquisitions we wait as long as it takes
-        sub.set(zmq::sockopt::rcvtimeo, -1);
-        size_t num_frames_seen = 0;
-        double time_waiting = 0;
-        double time_frame = 0;
-        auto time_acq = std::optional<Timer>();
-        // Loop over images within an acquisition
-        while (!stop.stop_requested()) {
-            std::vector<zmq::message_t> recv_msgs;
-            auto wait_time = Timer();
-            ++threads_waiting;
-            const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
-            --threads_waiting;
-            in_acquisition = true;
-            if (!time_acq.has_value()) {
-                time_acq = {Timer()};
-            }
-            time_waiting += wait_time.get_elapsed_seconds();
-            auto frame_time = Timer();
-            // All subsequent waits on this series of images can timeout
-            sub.set(zmq::sockopt::rcvtimeo, static_cast<int>(args.zmq_timeout));
+//     while (!stop.stop_requested()) {
+//         // Make sure all of our threads are in the same phase
+//         sync_barrier.arrive_and_wait();
+//         // Wait for the next message. Count waiting so we know when we are idle.
+//         // Between acquisitions we wait as long as it takes
+//         sub.set(zmq::sockopt::rcvtimeo, -1);
+//         size_t num_frames_seen = 0;
+//         double time_waiting = 0;
+//         double time_frame = 0;
+//         auto time_acq = std::optional<Timer>();
+//         // Loop over images within an acquisition
+//         while (!stop.stop_requested()) {
+//             std::vector<zmq::message_t> recv_msgs;
+//             auto wait_time = Timer();
+//             ++threads_waiting;
+//             const auto ret = zmq::recv_multipart(sub, std::back_inserter(recv_msgs));
+//             --threads_waiting;
+//             in_acquisition = true;
+//             if (!time_acq.has_value()) {
+//                 time_acq = {Timer()};
+//             }
+//             time_waiting += wait_time.get_elapsed_seconds();
+//             auto frame_time = Timer();
+//             // All subsequent waits on this series of images can timeout
+//             sub.set(zmq::sockopt::rcvtimeo, static_cast<int>(args.zmq_timeout));
 
-            if (!ret) {
-                // If here, then we had a timeout waiting for images.
-                print(style::error,
-                      "{}: HMI={} Error: Timeout waiting for more images/end "
-                      "notification\n",
-                      port,
-                      handler.known_hmi.value());
-                break;
-            }
+//             if (!ret) {
+//                 // If here, then we had a timeout waiting for images.
+//                 print(style::error,
+//                       "{}: HMI={} Error: Timeout waiting for more images/end "
+//                       "notification\n",
+//                       port,
+//                       handler.known_hmi.value());
+//                 break;
+//             }
 
-            if (num_frames_seen == 0) {
-                print("{}: {}", port, recv_msgs[0].to_string_view());
-            }
-            auto header =
-                json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
-            if (ret == 1 && header.bitmode == 0) {
-                print("{}: Received end packet\n", port);
-                break;
-            } else if (ret > 2) {
-                print(style::error,
-                      "{}: Error: Got unexpected multipart message length {}\n{}",
-                      port,
-                      ret.value(),
-                      recv_msgs[0].to_string_view());
-                continue;
-            }
-            if (port == args.zmq_port) {
-                acq_progress = header.progress;
-            }
-            ++num_frames_seen;
-            // We have a standard image packet
-            // Validate the header, and skip this image if invalid
-            if (!handler.validate_header(header)) {
-                continue;
-            }
-            std::span<uint16_t> data = {
-                reinterpret_cast<uint16_t *>(recv_msgs[1].data()),
-                recv_msgs[1].size() / 2};
-            handler.process_frame(header, data);
-            time_frame += frame_time.get_elapsed_seconds();
-        }
-        bool was_pedestals = handler.is_pedestal_mode;
-        handler.end_acquisition();
-        // Now, wait until all frames have completed
-        sync_barrier.arrive_and_wait();
-        in_acquisition = false;
-        print(
-            "{}: Time waiting for LZ4: {:.2f}S Process: {:.2f}S Push: {:.2f}S Frame: "
-            "{:.2f}S Wait: {:.2f}S Corr: {:.2f}S BS: {:.2f}S\n",
-            port,
-            handler.stats_lz4_time,
-            handler.stats_process_frame_time,
-            handler.stats_push,
-            time_frame,
-            time_waiting,
-            handler.stats_correct,
-            handler.stats_bs);
-        // If we are the first port
-        if (port == args.zmq_port) {
-            print("Acquisition {} complete in {:.2f}S\n",
-                  acquisition_number,
-                  time_acq.value().get_elapsed_seconds());
-            ++acquisition_number;
-            acq_progress = 0;
-            if (was_pedestals) {
-                pedestals.save_pedestals();
-            }
-        }
-        time_acq = std::nullopt;
-    }
-}
+//             if (num_frames_seen == 0) {
+//                 print("{}: {}", port, recv_msgs[0].to_string_view());
+//             }
+//             auto header =
+//                 json::parse(recv_msgs[0].to_string_view()).template get<SLSHeader>();
+//             if (ret == 1 && header.bitmode == 0) {
+//                 print("{}: Received end packet\n", port);
+//                 break;
+//             } else if (ret > 2) {
+//                 print(style::error,
+//                       "{}: Error: Got unexpected multipart message length {}\n{}",
+//                       port,
+//                       ret.value(),
+//                       recv_msgs[0].to_string_view());
+//                 continue;
+//             }
+//             if (port == args.zmq_port) {
+//                 acq_progress = header.progress;
+//             }
+//             ++num_frames_seen;
+//             // We have a standard image packet
+//             // Validate the header, and skip this image if invalid
+//             if (!handler.validate_header(header)) {
+//                 continue;
+//             }
+//             std::span<uint16_t> data = {
+//                 reinterpret_cast<uint16_t *>(recv_msgs[1].data()),
+//                 recv_msgs[1].size() / 2};
+//             handler.process_frame(header, data);
+//             time_frame += frame_time.get_elapsed_seconds();
+//         }
+//         bool was_pedestals = handler.is_pedestal_mode;
+//         handler.end_acquisition();
+//         // Now, wait until all frames have completed
+//         sync_barrier.arrive_and_wait();
+//         in_acquisition = false;
+//         print(
+//             "{}: Time waiting for LZ4: {:.2f}S Process: {:.2f}S Push: {:.2f}S Frame: "
+//             "{:.2f}S Wait: {:.2f}S Corr: {:.2f}S BS: {:.2f}S\n",
+//             port,
+//             handler.stats_lz4_time,
+//             handler.stats_process_frame_time,
+//             handler.stats_push,
+//             time_frame,
+//             time_waiting,
+//             handler.stats_correct,
+//             handler.stats_bs);
+//         // If we are the first port
+//         if (port == args.zmq_port) {
+//             print("Acquisition {} complete in {:.2f}S\n",
+//                   acquisition_number,
+//                   time_acq.value().get_elapsed_seconds());
+//             ++acquisition_number;
+//             acq_progress = 0;
+//             if (was_pedestals) {
+//                 pedestals.save_pedestals();
+//             }
+//         }
+//         time_acq = std::nullopt;
+//     }
+// }
 //    sls::Receiver r(argc, argv);
 // auto zmq_listen(std::stop_token stop,
 //                 std::barrier<> &sync_barrier,
@@ -899,45 +899,44 @@ auto do_live(Arguments &args) -> void {
 
     auto pedestals = PedestalsLibrary(args.detector);
 
-    print("Connecting to {}\n",
-          styled(fmt::format("tcp://{}:{}-{}",
-                             args.zmq_host,
-                             args.zmq_port,
-                             args.zmq_port + args.zmq_listeners - 1),
-                 style::url));
-    print("Require pedestals: {}\n", args.require_pedestals);
-    // Now we know how many workers, we can construct the global barrier
-    auto barrier = std::barrier{args.zmq_listeners};
-    {
-        std::vector<std::jthread> threads;
-        for (uint16_t port = args.zmq_port; port < args.zmq_port + args.zmq_listeners;
-             ++port) {
-            threads.emplace_back(zmq_listen,
-                                 global_stop.get_token(),
-                                 std::ref(barrier),
-                                 args,
-                                 std::cref(gains),
-                                 std::ref(pedestals),
-                                 port);
-            std::jthread &thread = threads.back();
-            std::string name = fmt::format("listen_{}", port);
-            pthread_setname_np(thread.native_handle(), name.c_str());
-        }
-        while (true) {
-            if (!args.no_progress) {
-                if (threads_waiting == args.zmq_listeners && !in_acquisition) {
-                    spinner("All listeners waiting");
-                } else {
-                    auto msg =
-                        fmt::format("  Progress {:3}: {:3.2f} %                  \r",
-                                    acquisition_number,
-                                    acq_progress);
-                    std::cout << msg << std::flush;
-                }
+    print("Listening on ports :{}-{}\n",
+          args.rx_port,
+          args.rx_port + args.rx_listeners - 1);
+    if (!args.require_pedestals) {
+        print(style::warning, "Running without requiring pedestal data\n");
+        // Now we know how many workers, we can construct the global barrier
+        auto barrier = std::barrier{args.rx_listeners};
+        {
+            std::vector<std::jthread> threads;
+            for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
+                 ++port) {
+                threads.emplace_back(start_receiver,
+                                     global_stop.get_token(),
+                                     std::ref(barrier),
+                                     args,
+                                     std::cref(gains),
+                                     std::ref(pedestals),
+                                     port);
+                std::jthread &thread = threads.back();
+                std::string name = fmt::format("listen_{}", port);
+                pthread_setname_np(thread.native_handle(), name.c_str());
             }
-            std::this_thread::sleep_for(80ms);
+            while (true) {
+                if (!args.no_progress) {
+                    if (threads_waiting == args.rx_listeners && !in_acquisition) {
+                        spinner("All listeners waiting");
+                    } else {
+                        auto msg = fmt::format(
+                            "  Progress {:3}: {:3.2f} %                  \r",
+                            acquisition_number,
+                            acq_progress);
+                        std::cout << msg << std::flush;
+                    }
+                }
+                std::this_thread::sleep_for(80ms);
+            }
         }
+        // Only happens if we change to terminate
+        print("All processing complete.\n");
     }
-    // Only happens if we change to terminate
-    print("All processing complete.\n");
 }
