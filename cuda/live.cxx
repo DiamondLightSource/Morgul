@@ -795,7 +795,7 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
                                 imageSize / 2};
     handler.process_frame(sls_header, data);
 
-    if (ctx.is_first_receiver) {
+    if (ctx.is_first_receiver && callbackHeader.udpPort == ctx.udp_ports[0]) {
         acq_progress = sls_header.progress;
     }
 }
