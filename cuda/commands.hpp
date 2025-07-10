@@ -15,9 +15,8 @@ struct Arguments {
     Detector detector;
     std::string cuda_device_signature;
     std::string zmq_host;
-    uint16_t zmq_port;
-    uint16_t zmq_listeners;
-    uint16_t zmq_timeout;
+    uint16_t rx_port;
+    uint16_t rx_listeners;
     uint16_t zmq_send_port;
 
     struct PedestalArguments {
