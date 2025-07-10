@@ -158,6 +158,7 @@ class SLSHeader {
     std::map<std::string, std::string> addJsonHeader;
     /// DLS-specific additional headers that may be present in addJsonHeader
     DLSHeaderAdditions dls;
+    uint16_t udp_port;
 };
 
 #pragma endregion
@@ -613,9 +614,11 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     auto time_push = Timer();
     if (send_onwards && zmq::send_multipart(send, send_msgs) == std::nullopt) {
         print(style::warning,
-              "{}: Warning: Failed to send onward message. Disabling send until end of "
+              "{}:{}: Warning: Failed to send onward message. Disabling send until end "
+              "of "
               "acquisition.\n",
-              _port);
+              _port,
+              header.udp_port);
         // Don't send any more this acquisition.
         send_onwards = false;
     }
@@ -805,7 +808,7 @@ struct AcqContext {
     PedestalsLibrary &pedestals;
     uint16_t port;
     std::array<uint16_t, 2> udp_ports;
-    zmq::socket_t &zmq_send;
+    // zmq::socket_t &zmq_send;
     /// Bit depth, from start acquisition header
     /// Detector shape, from start acquisition header
 };
@@ -832,7 +835,7 @@ auto header_from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader
     out.row = recHeader.detHeader.row;
     out.shape = {static_cast<uint32_t>(dataHeader.shape.x),
                  static_cast<uint32_t>(dataHeader.shape.y)};
-
+    out.udp_port = dataHeader.udpPort;
     return out;
 }
 
@@ -942,6 +945,16 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     }
 }
 
+auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
+    zmq::socket_t send{context, zmq::socket_type::push};
+    send.set(zmq::sockopt::sndhwm, 50000);
+    send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
+    send.set(zmq::sockopt::sndtimeo, 10000);
+    auto zmq_bind_spec = fmt::format("tcp://0.0.0.0:{}", port);
+    send.bind(zmq_bind_spec);
+    print("Binding sending ZMQ to {}\n", zmq_bind_spec);
+    return send;
+}
 auto start_receiver(std::stop_token stop,
                     std::barrier<> &sync_barrier,
                     const Arguments &args,
@@ -957,25 +970,19 @@ auto start_receiver(std::stop_token stop,
     // with shared later. The Guide (not that one) suggests one IO
     // thread per GB/s of data, and we have 2 GB/s per module (e.g.
     // each IO thread can cope with one half-module).
-    zmq::context_t ctx;
-    zmq::socket_t send{ctx, zmq::socket_type::push};
-    send.set(zmq::sockopt::sndhwm, 50000);
-    send.set(zmq::sockopt::sndbuf, 128 * 1024 * 1024);
-    send.set(zmq::sockopt::sndtimeo, 10000);
-    send.bind(
-        fmt::format("tcp://0.0.0.0:{}", port - args.rx_port + args.zmq_send_port));
+    zmq::context_t ctx, ctx2;
+    auto send_a = start_zmq_sender(ctx, (port - args.rx_port) * 2 + args.zmq_send_port);
+    auto send_b =
+        start_zmq_sender(ctx, (port - args.rx_port) * 2 + args.zmq_send_port + 1);
 
-    CudaStream stream;
-    DataStreamHandler handler(args, port, stream, gains, pedestals, send);
-    CudaStream stream2;
-    DataStreamHandler handler2(args, port, stream, gains, pedestals, send);
-    auto output_data = std::make_unique<uint16_t[]>(HM_HEIGHT * HM_WIDTH);
+    CudaStream stream, stream2;
+    DataStreamHandler handler(args, port, stream, gains, pedestals, send_a);
+    DataStreamHandler handler2(args, port, stream2, gains, pedestals, send_b);
 
     AcqContext context{.handlers = {&handler, &handler2},
                        .is_first_receiver = (port == args.rx_port),
                        .pedestals = pedestals,
-                       .port = port,
-                       .zmq_send = send};
+                       .port = port};
 
     r.registerCallBackStartAcquisition(StartAcq, &context);
     r.registerCallBackAcquisitionFinished(EndAcq, &context);
