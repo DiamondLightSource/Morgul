@@ -8,94 +8,107 @@
 #     "zmq",
 # ]
 # ///
+"""
+Morgul Sink - Connect to Morgul and receive data stream.
+
+This allows an actual load to be attached to the output of Morgul, so
+that it isn't processing then discarding data.
+"""
+
+import datetime
+import signal
+import threading
+import time
 from argparse import ArgumentParser
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Manager
 
 import hdf5plugin  # noqa: F401
 import zmq
 
 parser = ArgumentParser()
 parser.add_argument("host", help="IP to connect to")
-parser.add_argument("port", help="TCP port to connect to", type=int)
-# parser.add_argument("num_images", help="How many images to expect", type=int)
+parser.add_argument("port", help="TCP start port to connect to", type=int)
+parser.add_argument("num_listeners", help="Number of listeners to run", type=int)
 args = parser.parse_args()
 
-host = args.host
-port = args.port
+# host = args.host
+# port = args.port
 
-compression = {"compression": 32008, "compression_opts": (0, 2)}
 
-context = zmq.Context()
-socket = context.socket(zmq.PULL)
-socket.setsockopt(zmq.RCVHWM, 50000)
-socket.connect(f"tcp://{host}:{port}")
+def run_listener(
+    port: int, stop: threading.Event, first: bool, barrier: threading.Barrier
+):
+    context = zmq.Context()
+    socket = context.socket(zmq.PULL)
+    socket.setsockopt(zmq.RCVHWM, 50000)
+    socket.setsockopt(zmq.RCVTIMEO, 200)
+    socket.connect(f"tcp://{args.host}:{port}")
+    barrier.wait()
+    if first:
+        print(
+            f"All threads waiting on ports {port}-{port + args.num_listeners - 1}",
+            flush=True,
+        )
 
-# total = args.num_images
+    while not stop.is_set():
+        num_images = 0
 
-# fout = h5py.File(f"data_{port}.h5", "w")
+        while not stop.is_set():
+            socket.setsockopt(zmq.RCVTIMEO, 200)
+            try:
+                messages = socket.recv_multipart()
+                socket.setsockopt(zmq.RCVTIMEO, 2000)
+                print(f"{port}: Got initial frame", flush=True)
+                start = time.monotonic()
+                last_seen = time.monotonic()
+                if len(messages) > 1:
+                    num_images += 1
+                else:
+                    print(f"{port}: Got single start message")
+                break
+            except zmq.Again:
+                pass
 
-# data = fout.create_dataset(
-#     "data",
-#     shape=(total, 256, 1024),
-#     chunks=(1, 256, 1024),
-#     dtype=numpy.uint16,
-#     **compression,
-# )
-
-# timestamp = numpy.zeros(shape=(total,), dtype=numpy.float64)
-
-# try:
-print(f"Waiting on port {port}", flush=True)
-
-while True:
-    num_images = 0
-    while True:
-        try:
-            messages = socket.recv_multipart()
-            socket.setsockopt(zmq.RCVTIMEO, 2000)
-            print("Got initial frame", messages[0], flush=True)
-            if len(messages) > 1:
-                num_images += 1
-            break
-        except zmq.Again:
-            pass
-
-    while True:
-        try:
-            messages = socket.recv_multipart()
-            socket.setsockopt(zmq.RCVTIMEO, 2000)
-            if len(messages) > 1:
-                num_images += 1
-            if len(messages) == 1:
-                print(f"Got image end packet. Saw {num_images} images.", flush=True)
-        except zmq.Again:
+        while not stop.is_set():
+            try:
+                messages = socket.recv_multipart()
+                last_seen = time.monotonic()
+                if len(messages) > 1:
+                    num_images += 1
+                if len(messages) == 1:
+                    print(
+                        f"{port}: Got image end packet. Saw {num_images} images.",
+                        flush=True,
+                    )
+            except zmq.Again:
+                print(
+                    f"{port}: Got timeout waiting for more images. Saw {num_images} images in {1000 * (last_seen - start):.0f} ms",
+                    flush=True,
+                )
+                break
+        barrier.wait()
+        if first and not stop.is_set():
             print(
-                f"Got timeout waiting for more images. Saw {num_images} images",
+                f"All acquisition threads completed at {datetime.datetime.now().isoformat()}",
                 flush=True,
             )
-            break
 
-    # print(f"seen frame {num}", flush=True)
-    # if not seen_frames:
-    #     print("Seen Frame)
 
-#     for count in range(total):
-#         messages = socket.recv_multipart()
-#         socket.setsockopt(zmq.RCVTIMEO, 2000)
+with Manager() as manager:
+    stop = manager.Event()
+    barrier = manager.Barrier(args.num_listeners)
 
-#         # header = json.loads(messages[0])
-#         # frame = header["frameIndex"]
-#         # offset = (frame, 0, 0)
-#         # data.id.write_direct_chunk(offset, messages[1])
-#         # timestamp[frame] = time.time()
-#         # if count == 0:
-#         #     with open(f"raw_{port}.dat", "wb") as f:
-#         #         f.write(messages[1])
-# except zmq.Again:
-#     print("Got timeout waiting for more images")
-# finally:
-#     fout.create_dataset(
-#         "timestamp", shape=(total,), data=timestamp, dtype=numpy.float64
-#     )
+    # Set the stop signal if we hit ctrl-c
+    def handler(_signal, _frame):
+        stop.set()
 
-#     fout.close()
-#     print("Closed data file")
+    signal.signal(signal.SIGINT, handler)
+    # Now run the workers
+    with ProcessPoolExecutor(max_workers=args.num_listeners) as pool:
+        for port in range(args.port, args.port + args.num_listeners):
+            pool.submit(
+                run_listener, port, stop, first=(port == args.port), barrier=barrier
+            )
+
+print("done")
