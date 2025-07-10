@@ -423,16 +423,6 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     }
     // Handle knowing which module we handle
     auto hmi = header.column * det_h + header.row;
-    if (hmi > 100) {
-        print(style::error,
-              "{}: Fatal error: Got unrealistic HMI from\n {} * {} + {} = {}\n",
-              _port,
-              header.column,
-              det_h,
-              header.row,
-              hmi);
-        std::exit(1);
-    }
     if (!known_hmi) {
         known_hmi = hmi;
     } else {
