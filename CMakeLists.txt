@@ -64,6 +64,13 @@ FetchContent_Declare(
     URL https://github.com/google/googletest/archive/e235eb34c6c4fed790ccdad4b16394301360dcd4.zip
 )
 FetchContent_MakeAvailable(googletest)
+FetchContent_Declare(
+    readerwriterqueue
+    GIT_REPOSITORY https://github.com/cameron314/readerwriterqueue.git
+    GIT_TAG 8b2176698e9bdaba653cdc20c32b54737a934b47 # v1.0.7
+)
+FetchContent_MakeAvailable(readerwriterqueue)
+
 
 find_package(LZ4 REQUIRED)
 find_package(CUDAToolkit 12.2 REQUIRED)
@@ -109,6 +116,7 @@ target_link_libraries(
     nlohmann_json::nlohmann_json
     zeus::expected
     slsReceiverShared
+    readerwriterqueue
 )
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
