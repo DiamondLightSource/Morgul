@@ -5,6 +5,7 @@ import operator
 from collections.abc import Callable
 from functools import reduce
 from pathlib import Path
+import sys
 from typing import Annotated, TypeAlias
 
 import h5py
@@ -22,8 +23,7 @@ class FileKind(enum.Enum):
     GAIN_MAP = enum.auto()
     MASK = enum.auto()
     PEDESTAL = enum.auto()
-    RAW = enum.auto()
-    CORRECTED = enum.auto()
+    IMAGE = enum.auto()
 
 
 ViewCallable: TypeAlias = Callable[[dict[Path, h5py.Group]], None]
@@ -61,10 +61,10 @@ def determine_kinds(root: h5py.Group) -> set[FileKind]:
         ):
             kinds.add(FileKind.PEDESTAL)
     if "data" in root and isinstance(root["data"], h5py.Dataset):
-        if root["data"].attrs.get("corrected", False):
-            kinds.add(FileKind.CORRECTED)
-        else:
-            kinds.add(FileKind.RAW)
+        kinds.add(FileKind.IMAGE)
+        # TODO: We used to be able to distinguish corrected from raw data.
+        # Currently, there is nothing in the output files to indicate this
+        # (except potentially the presence of specific pixels)
 
     return kinds
 
@@ -153,19 +153,25 @@ def view_pedestal(files: dict[Path, h5py.Group]) -> None:
 
 
 def view_image(files: dict[Path, h5py.Group], corrected: bool):
-    # assert len(files) == 1
-    # filename, root = next(iter(files.items()))
-    # assert len(files) <= 2
     detector = config.get_detector()
 
     viewer = napari.Viewer()
 
     points: dict[str, tuple[float, float]] = {}
+    module_mode : config.ModuleMode | None = None
 
-    for h5 in files.values():
+    for filename, h5 in files.items():
+        # Work out the module mode
+        this_mode = config.ModuleMode.from_shape(h5["data"].shape[1:])
+        # Check that we only have one module mode; mixing module sizes is wrong
+        if module_mode is None:
+            module_mode = this_mode
+        elif module_mode != this_mode:
+            sys.exit(f"Error: Module mode from {filename} ({this_mode}) does not match other files ({module_mode})")
+
         # Get the module for this file
         h, w = h5["data"].shape[1:]
-        module = config.get_module_info(detector, h5["column"][()], h5["row"][()])[
+        module = config.get_module_info(detector, h5["column"][()], h5["row"][()] // 2)[
             "module"
         ]
         # Work out the transform
