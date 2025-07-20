@@ -28,9 +28,12 @@
 #include "hdf5_tools.hpp"
 #include "kernels.h"
 #include "lz4.h"
+#include "readerwriterqueue.h"
 
 using namespace fmt;
 using json = nlohmann::json;
+using moodycamel::ReaderWriterQueue;
+
 using namespace std::chrono_literals;
 
 /// Location of some pedestal data to load. Make this automatic/specifiable later
