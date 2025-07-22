@@ -37,7 +37,11 @@ args = parser.parse_args()
 
 
 def run_listener(
-    port: int, stop: threading.Event, first: bool, barrier: threading.Barrier
+    port: int,
+    stop: threading.Event,
+    first: bool,
+    barrier: threading.Barrier,
+    started: threading.Event,
 ):
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
@@ -54,11 +58,13 @@ def run_listener(
     while not stop.is_set():
         num_images = 0
 
+        last_started = False
         while not stop.is_set():
             socket.setsockopt(zmq.RCVTIMEO, 200)
             try:
                 messages = socket.recv_multipart()
                 socket.setsockopt(zmq.RCVTIMEO, 2000)
+                started.set()
                 print(f"{port}: Got initial frame", flush=True)
                 start = time.monotonic()
                 last_seen = time.monotonic()
@@ -68,7 +74,13 @@ def run_listener(
                     print(f"{port}: Got single start message")
                 break
             except zmq.Again:
-                pass
+                if last_started:
+                    print(
+                        f"{port}: Error - waited 200ms to start with group but never got messages"
+                    )
+                    break
+                else:
+                    last_started = started.is_set()
 
         while not stop.is_set():
             try:
@@ -87,8 +99,9 @@ def run_listener(
                     flush=True,
                 )
                 break
-        barrier.wait()
+        first = barrier.wait() == 0
         if first and not stop.is_set():
+            started.clear()
             print(
                 f"All acquisition threads completed at {datetime.datetime.now().isoformat()}",
                 flush=True,
@@ -98,6 +111,7 @@ def run_listener(
 with Manager() as manager:
     stop = manager.Event()
     barrier = manager.Barrier(args.num_listeners)
+    started = manager.Event()
 
     # Set the stop signal if we hit ctrl-c
     def handler(_signal, _frame):
@@ -108,7 +122,12 @@ with Manager() as manager:
     with ProcessPoolExecutor(max_workers=args.num_listeners) as pool:
         for port in range(args.port, args.port + args.num_listeners):
             pool.submit(
-                run_listener, port, stop, first=(port == args.port), barrier=barrier
+                run_listener,
+                port,
+                stop,
+                first=(port == args.port),
+                barrier=barrier,
+                started=started,
             )
 
 print("done")
