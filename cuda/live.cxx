@@ -49,6 +49,7 @@ std::atomic_bool in_acquisition{false};
 std::atomic_bool is_first_validation_this_acquisition{false};
 std::atomic_int acquisition_number{0};
 std::atomic<float> acq_progress{0};
+std::atomic<float> total_processing_time;
 
 /// Get an environment variable if present, with optional default
 auto getenv_or(std::string name, std::optional<std::string> _default = std::nullopt)
@@ -667,6 +668,9 @@ struct AcqContext {
     PedestalsLibrary &pedestals;
     uint16_t port;
     std::array<uint16_t, 2> udp_ports;
+    std::vector<float> frame_times_a;
+    std::vector<float> frame_times_b;
+    std::array<float, 2> cumulative_time;
     // zmq::socket_t &zmq_send;
     /// Bit depth, from start acquisition header
     /// Detector shape, from start acquisition header
@@ -731,6 +735,7 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
                     static_cast<uint32_t>(header.detectorShape.y)};
     if (ctx.is_first_receiver) {
         acq_progress = 0.0f;
+        total_processing_time = 0.0;
         cudaProfilerStart();
     }
     return 0;
@@ -742,16 +747,29 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
     // std::vector<uint32_t> udpPort;
     //         std::vector<uint64_t> completeFrames;
     //         std::vector<uint64_t> lastFrameIndex;
+    std::sort(ctx.frame_times_a.begin(), ctx.frame_times_a.end());
+    std::sort(ctx.frame_times_b.begin(), ctx.frame_times_b.end());
     print(
         "┏━━ End Acquisition on receiver TCP port: {} (tid:{})\n"
         "┃ UDP Ports:        {}\n"
         "┃ Complete Frames:  {}\n"
-        "┗ Last Frame Index: {}\n",
+        "┃ Last Frame Index: {}\n"
+        "┃ Longest processing 0: {::.2f} ms\n"
+        "┃ Longest processing 1: {::.2f} ms\n"
+        "┗ Total processing time/frame: {:.2f} {:.2f} ms\n",
         ctx.port,
         std::this_thread::get_id(),
         header.udpPort,
         header.completeFrames,
-        header.lastFrameIndex);
+        header.lastFrameIndex,
+        // ctx.frame_times[static_cast<size_t>(ctx.frame_times.size() / 2)]
+        std::vector<float>(ctx.frame_times_a.end() - 10, ctx.frame_times_a.end()),
+        std::vector<float>(ctx.frame_times_b.end() - 10, ctx.frame_times_b.end()),
+        ctx.cumulative_time[0] * 1000.0 / header.completeFrames[0],
+        ctx.cumulative_time[1] * 1000.0 / header.completeFrames[1]);
+    // );
+
+    total_processing_time += ctx.cumulative_time[0] + ctx.cumulative_time[1];
 
     bool was_pedestals = ctx.handlers[0]->is_pedestal_mode;
     ctx.handlers[0]->end_acquisition();
@@ -775,11 +793,13 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
              char *dataPointer,
              size_t &imageSize,
              void *objectPointer) {
+    auto process_timer = Timer();
     // NOTE: THIS FUNCTION IS CALLED FROM A THREAD PER STREAM
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
     auto sls_header = header_from_framedata(header, callbackHeader, ctx);
     // Find the handler for this UDP port
-    auto &handler = *ctx.handlers[callbackHeader.udpPort == ctx.udp_ports[0] ? 0 : 1];
+    auto port_instance = callbackHeader.udpPort == ctx.udp_ports[0] ? 0 : 1;
+    auto &handler = *ctx.handlers[port_instance];
     // print(
     //     "┏━━ Got Frame on receiver TCP port {} (tid:{})\n"
     //     "┃ UDP Ports:         {}\n"
@@ -804,6 +824,12 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     if (ctx.is_first_receiver && callbackHeader.udpPort == ctx.udp_ports[0]) {
         acq_progress = sls_header.progress;
     }
+    if (port_instance == 0) {
+        ctx.frame_times_a.push_back(process_timer.get_elapsed_seconds() * 1000);
+    } else {
+        ctx.frame_times_b.push_back(process_timer.get_elapsed_seconds() * 1000);
+    }
+    ctx.cumulative_time[port_instance] += process_timer.get_elapsed_seconds();
 }
 
 auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
