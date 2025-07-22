@@ -25,6 +25,7 @@
 #include "common.hpp"
 #include "constants.hpp"
 #include "cuda_common.hpp"
+#include "cuda_profiler_api.h"
 #include "hdf5_tools.hpp"
 #include "kernels.h"
 #include "lz4.h"
@@ -730,6 +731,7 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
                     static_cast<uint32_t>(header.detectorShape.y)};
     if (ctx.is_first_receiver) {
         acq_progress = 0.0f;
+        cudaProfilerStart();
     }
     return 0;
 }
@@ -763,6 +765,7 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
         if (was_pedestals) {
             ctx.pedestals.save_pedestals();
         }
+        cudaProfilerStop();
     }
     ++threads_waiting;
 }
