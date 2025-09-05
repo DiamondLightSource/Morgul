@@ -895,6 +895,8 @@ auto do_live(Arguments &args) -> void {
         print("Detector: {}\n", JF1M_Display);
     } else if (args.detector == JF9M_SIM) {
         print("Detector: {}\n", JF9M_SIM_Display);
+    } else if (args.detector == JF9M) {
+        print("Detector: {}\n", JF9M_Display);
     } else {
         print("Detector: {}\n", styled(args.detector, emphasis::bold));
     }

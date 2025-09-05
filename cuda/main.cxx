@@ -16,7 +16,7 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
     Arguments args;
 
     auto parser = CUDAArgumentParser();
-    parser.add_argument("--detector").default_value(JF1M).store_into(args.detector);
+    parser.add_argument("--detector").default_value(JF9M).store_into(args.detector);
     auto correct_parser = argparse::ArgumentParser("correct");
     correct_parser.add_argument("SOURCES")
         .help("Raw data files to run corrections on")
