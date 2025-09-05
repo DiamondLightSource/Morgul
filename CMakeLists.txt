@@ -64,6 +64,13 @@ FetchContent_Declare(
     URL https://github.com/google/googletest/archive/e235eb34c6c4fed790ccdad4b16394301360dcd4.zip
 )
 FetchContent_MakeAvailable(googletest)
+FetchContent_Declare(
+    readerwriterqueue
+    GIT_REPOSITORY https://github.com/cameron314/readerwriterqueue.git
+    GIT_TAG 8b2176698e9bdaba653cdc20c32b54737a934b47 # v1.0.7
+)
+FetchContent_MakeAvailable(readerwriterqueue)
+
 
 find_package(LZ4 REQUIRED)
 find_package(CUDAToolkit 12.2 REQUIRED)
@@ -72,6 +79,9 @@ find_package(lodepng REQUIRED)
 find_package(cppzmq REQUIRED)
 
 ensure_submodule(modules/bitshuffle)
+ensure_submodule(modules/slsDetectorPackage)
+add_subdirectory(modules/slsDetectorPackage)
+
 add_library(
     bitshuffle
     modules/bitshuffle/src/bitshuffle.c
@@ -105,10 +115,13 @@ target_link_libraries(
     LZ4::LZ4
     nlohmann_json::nlohmann_json
     zeus::expected
+    slsReceiverShared
+    readerwriterqueue
 )
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(libmorgul PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>")
+target_compile_options(libmorgul PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>")
 target_include_directories(libmorgul INTERFACE cuda)
 # target_compile_options(morgul-cuda PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
 

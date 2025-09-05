@@ -26,26 +26,22 @@ auto do_argument_parsing(int argc, char **argv) -> Arguments {
 
     auto live_parser = argparse::ArgumentParser("live");
     live_parser.add_argument("LISTENERS")
-        .help("How many listeners to run (e.g. how many PUB sources)")
-        .store_into(args.zmq_listeners);
-    live_parser.add_argument("--zmq-port")
+        .help("How many receivers to run")
+        .store_into(args.rx_listeners);
+    live_parser.add_argument("--port")
         .help(
             "The first port to connect to. Automatically incremented by 1 for each "
             "listener.")
-        .default_value(static_cast<decltype(Arguments::zmq_port)>(30001))
-        .store_into(args.zmq_port)
+        .default_value(static_cast<decltype(Arguments::rx_port)>(3000))
+        .store_into(args.rx_port)
         .metavar("NUM");
-    live_parser.add_argument("--zmq-host")
-        .help("The ZMQ host to connect to")
-        .default_value(std::string{"0.0.0.0"})
-        .store_into(args.zmq_host);
-    live_parser.add_argument("--zmq-timeout")
-        .help(
-            "The time (in milliseconds) to wait for more frames in the current "
-            "acquisition before giving up. 0 means wait forever.")
-        .default_value(static_cast<decltype(args.zmq_timeout)>(10000))
-        .store_into(args.zmq_timeout)
-        .metavar("MS");
+    // live_parser.add_argument("--zmq-timeout")
+    //     .help(
+    //         "The time (in milliseconds) to wait for more frames in the current "
+    //         "acquisition before giving up. 0 means wait forever.")
+    //     .default_value(static_cast<decltype(args.zmq_timeout)>(10000))
+    //     .store_into(args.zmq_timeout)
+    //     .metavar("MS");
     live_parser.add_argument("--zmq-send-port")
         .help(
             "The ZMQ base port to send corrected data onwards, one per listener. Binds "
