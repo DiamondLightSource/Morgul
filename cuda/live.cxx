@@ -673,9 +673,8 @@ struct AcqContext {
     std::vector<float> frame_times_a;
     std::vector<float> frame_times_b;
     std::array<float, 2> cumulative_time;
-    // zmq::socket_t &zmq_send;
-    /// Bit depth, from start acquisition header
-    /// Detector shape, from start acquisition header
+    /// Are we skipping this acquisition e.g. we found something wrong?
+    bool skip_acquisition;
 };
 
 // ━  ┃  ┏ ┳ ┓ ┏ ┯ ┓ ┏ ┳ ┓ ┏ ┯ ┓
@@ -706,6 +705,7 @@ auto header_from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader
 
 int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPointer) {
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
+    ctx.skip_acquisition = false;
     assert(header.udpPort.size() == 2);
     ctx.udp_ports = {static_cast<uint16_t>(header.udpPort[0]),
                      static_cast<uint16_t>(header.udpPort[1])};
@@ -746,6 +746,10 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
 // /** Acquisition Finished Call back */
 void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer) {
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
+    if (ctx.skip_acquisition) {
+        // We had some error earlier that means we don't trust this acquisition
+        return;
+    }
     // std::vector<uint32_t> udpPort;
     //         std::vector<uint64_t> completeFrames;
     //         std::vector<uint64_t> lastFrameIndex;
@@ -871,7 +875,8 @@ auto start_receiver(std::stop_token stop,
     AcqContext context{.handlers = {&handler, &handler2},
                        .is_first_receiver = (port == args.rx_port),
                        .pedestals = pedestals,
-                       .port = port};
+                       .port = port,
+                       .skip_acquisition = false};
 
     r.registerCallBackStartAcquisition(StartAcq, &context);
     r.registerCallBackAcquisitionFinished(EndAcq, &context);
