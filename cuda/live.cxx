@@ -601,7 +601,8 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["row"] = header.row;
     send_header["column"] = header.column;
     send_header["shape"] = header.shape;
-    send_header["detshape"] = header.detshape send_header["bitmode"] = header.bitmode;
+    send_header["detshape"] = header.detshape;
+    send_header["bitmode"] = header.bitmode;
     send_header["expLength"] = header.expLength;
     send_header["acquisition"] = acquisition_number.load();
     send_msgs.push_back(zmq::message_t(send_header.dump()));
