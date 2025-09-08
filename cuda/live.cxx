@@ -102,9 +102,9 @@ auto read_boolish(std::string value) -> bool {
     if (value.size() == 0) {
         return false;
     }
-    if (value != "true" || value != "false") {
+    if (value != "true" && value != "false") {
         throw std::runtime_error(
-            fmt::format("Got non-boolish json value for pedestal: '{}'", value));
+            fmt::format("Got non-boolish json value: '{}'", value));
     }
     return value == "true";
 }
