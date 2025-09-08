@@ -6,6 +6,7 @@
 #     "hdf5plugin",
 #     "numpy",
 #     "zmq",
+#     "pydantic>2",
 # ]
 # ///
 """
@@ -16,98 +17,187 @@ that it isn't processing then discarding data.
 """
 
 import datetime
+import os
+import shutil
 import signal
+import subprocess
+import sys
 import threading
 import time
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Manager
+from pathlib import Path
+from typing import Tuple
 
 import hdf5plugin  # noqa: F401
 import zmq
+from pydantic import BaseModel
+
+PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-EA-EIGER-01:OD:FilePath_RBV"
+PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-EA-EIGER-01:OD:FP:FileName_RBV"
+PV_COUNT = os.getenv("MORGUL_PV_COUNT") or "BL24I-EA-EIGER-01:OD:NumCapture"
+
+CAGET_EXE = shutil.which("caget")
+if not CAGET_EXE:
+    sys.exit("Error: caget must be present on the path")
 
 parser = ArgumentParser()
 parser.add_argument("host", help="IP to connect to")
 parser.add_argument("port", help="TCP start port to connect to", type=int)
 parser.add_argument("num_listeners", help="Number of listeners to run", type=int)
+parser.add_argument("--write", help="Do image file writing", action="store_true")
 args = parser.parse_args()
 
-# host = args.host
-# port = args.port
+
+def caget(pv, as_string: bool = True) -> str:
+    proc = subprocess.run(
+        [CAGET_EXE, "-tS", pv], capture_output=True, check=True, text=True
+    )
+    return proc.stdout.strip()
 
 
-def run_listener(
-    port: int,
-    stop: threading.Event,
-    first: bool,
-    barrier: threading.Barrier,
-    started: threading.Event,
-):
-    context = zmq.Context()
-    socket = context.socket(zmq.PULL)
-    socket.setsockopt(zmq.RCVHWM, 50000)
-    socket.setsockopt(zmq.RCVTIMEO, 200)
-    socket.connect(f"tcp://{args.host}:{port}")
-    barrier.wait()
-    if first:
-        print(
-            f"All threads waiting on ports {port}-{port + args.num_listeners - 1}",
-            flush=True,
-        )
+class Header(BaseModel):
+    frameIndex: int
+    row: int
+    column: int
+    shape: Tuple[int, int]
+    detshape: Tuple[int, int]
+    bitmode: int
+    expLength: int
+    acquisition: int
 
-    while not stop.is_set():
-        num_images = 0
 
+def get_filename_template() -> str | None:
+    if not args.write:
+        return None
+    return str(
+        Path(caget(PV_PATH, as_string=True))
+        / (caget(PV_FILENAME, as_string=True) + "_{}_{}.h5")
+    )
+
+
+class Writer:
+    def __init__(
+        self,
+        port: int,
+        stop: threading.Event,
+        first: bool,
+        barrier: threading.Barrier,
+        started: threading.Event,
+    ):
+        self.port = port
+        self.stop = stop
+        self.first = first
+        self.barrier = barrier
+        self.started = started
+
+        self.listen()
+
+    def listen(self):
+        context = zmq.Context()
+        self.socket = context.socket(zmq.PULL)
+        self.socket.setsockopt(zmq.RCVHWM, 50000)
+        self.socket.setsockopt(zmq.RCVTIMEO, 200)
+        self.socket.connect(f"tcp://{args.host}:{port}")
+        first_out = self.barrier.wait() == 0
+        if first_out:
+            print(
+                f"{args.num_listeners} threads waiting on ports {port}-{port + args.num_listeners - 1}",
+                flush=True,
+            )
+
+        while not self.stop.is_set():
+            self.socket.setsockopt(zmq.RCVTIMEO, 200)
+
+            self.do_acquisition()
+
+            first_out = self.barrier.wait() == 0
+            if first_out and not self.stop.is_set():
+                self.started.clear()
+                print(
+                    f"All acquisition threads completed at {datetime.datetime.now().isoformat()}",
+                    flush=True,
+                )
+
+    def do_acquisition(self):
+        """Run a single acquisition"""
+        # What was the started flag the last time we went round?
         last_started = False
         while not stop.is_set():
-            socket.setsockopt(zmq.RCVTIMEO, 200)
             try:
-                messages = socket.recv_multipart()
-                socket.setsockopt(zmq.RCVTIMEO, 2000)
-                started.set()
-                print(f"{port}: Got initial frame", flush=True)
-                start = time.monotonic()
-                last_seen = time.monotonic()
-                if len(messages) > 1:
-                    num_images += 1
-                else:
-                    print(f"{port}: Got single start message")
-                break
+                messages = self.socket.recv_multipart()
             except zmq.Again:
                 if last_started:
                     print(
-                        f"{port}: Error - waited 200ms to start with group but never got messages"
+                        f"{self.port}: Error - waited extra 200ms to start with group but never got messages"
                     )
-                    break
+                    return
                 else:
+                    # If any of the threads have started, then we should wait only one more round
                     last_started = started.is_set()
+        # Don't do anything else if stop requested
+        if stop.is_set():
+            return
 
-        while not stop.is_set():
+        # Wait longer once we have started
+        self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self.started.set()
+        print(messages)
+        template_path = get_filename_template()
+        expected_images = int(caget(PV_COUNT))
+        print(f"{self.port}: Got initial frame, expect {expected_images}", flush=True)
+        header = Header.model_validate_json(messages[0])
+        print(f"{self.port}: {header}")
+        module_hmi = header.detshape[1] * header.column + header.row
+        if template_path:
+            print(
+                f"{self.port}: Writing to {template_path.format(module_hmi, 0)}",
+                flush=True,
+            )
+        start = time.monotonic()
+        last_seen = time.monotonic()
+        if len(messages) != 2:
+            print(f"{self.port}: Error: Got unexpected start message: {messages}")
+            return
+
+        num_images = 1
+        # Wait for the rest of the data;
+        while not stop.is_set() and num_images < expected_images:
             try:
-                messages = socket.recv_multipart()
+                messages = self.socket.recv_multipart()
                 last_seen = time.monotonic()
                 if len(messages) > 1:
                     num_images += 1
                 if len(messages) == 1:
                     print(
-                        f"{port}: Got image end packet. Saw {num_images} images.",
+                        f"{self.port}: Got image end packet. Saw {num_images} images.",
                         flush=True,
                     )
             except zmq.Again:
                 print(
-                    f"{port}: Got timeout waiting for more images. Saw {num_images} images in {1000 * (last_seen - start):.0f} ms",
+                    f"{self.port}: Got timeout waiting for more images. Saw {num_images} images in {1000 * (last_seen - start):.0f} ms",
                     flush=True,
                 )
                 break
-        first = barrier.wait() == 0
-        if first and not stop.is_set():
-            started.clear()
-            print(
-                f"All acquisition threads completed at {datetime.datetime.now().isoformat()}",
-                flush=True,
-            )
 
 
+print(r""" ███▄ ▄███▓ ▒█████   ██▀███    ▄████  █    ██  ██▓
+▓██▒▀█▀ ██▒▒██▒  ██▒▓██ ▒ ██▒ ██▒ ▀█▒ ██  ▓██▒▓██▒
+▓██    ▓██░▒██░  ██▒▓██ ░▄█ ▒▒██░▄▄▄░▓██  ▒██░▒██░
+▒██    ▒██ ▒██   ██░▒██▀▀█▄  ░▓█  ██▓▓▓█  ░██░▒██░
+▒██▒   ░██▒░ ████▓▒░░██▓ ▒██▒░▒▓███▀▒▒▒█████▓ ░██████▒
+░ ▒░   ░  ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░ ░▒   ▒ ░▒▓▒ ▒ ▒ ░ ▒░▓  ░
+░  ░      ░  ░ ▒ ▒░   ░▒ ░ ▒░  ░   ░ ░░▒░ ░ ░ ░ ░ ▒  ░
+░      ░   ░ ░ ░ ▒    ░░   ░ ░ ░   ░  ░░░ ░ ░   ░ ░
+       ░       ░ ░     ░           ░    ░         ░  ░
+             _       __     _ __
+            | |     / /____(_) /____  _____
+            | | /| / / ___/ / __/ _ \/ ___/
+            | |/ |/ / /  / / /_/  __/ /
+            |__/|__/_/  /_/\__/\___/_/""")
+
+print(f"Start template file: {get_filename_template()}")
 with Manager() as manager:
     stop = manager.Event()
     barrier = manager.Barrier(args.num_listeners)
@@ -122,7 +212,7 @@ with Manager() as manager:
     with ProcessPoolExecutor(max_workers=args.num_listeners) as pool:
         for port in range(args.port, args.port + args.num_listeners):
             pool.submit(
-                run_listener,
+                Writer,
                 port,
                 stop,
                 first=(port == args.port),
