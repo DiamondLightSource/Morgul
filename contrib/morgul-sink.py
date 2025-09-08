@@ -7,6 +7,7 @@
 #     "numpy",
 #     "zmq",
 #     "pydantic>2",
+#     "rich",
 # ]
 # ///
 """
@@ -26,13 +27,15 @@ import threading
 import time
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Manager
+from multiprocessing import Manager, managers
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 import hdf5plugin  # noqa: F401
 import zmq
 from pydantic import BaseModel
+from rich import print
+from zmq.utils.monitor import recv_monitor_message
 
 PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-EA-EIGER-01:OD:FilePath_RBV"
 PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-EA-EIGER-01:OD:FP:FileName_RBV"
@@ -68,6 +71,29 @@ class Header(BaseModel):
     acquisition: int
 
 
+EVENT_MAP = {}
+print("Event names:")
+for name in dir(zmq):
+    if name.startswith("EVENT_"):
+        value = getattr(zmq, name)
+        print(f"{name:21} : {value:4}")
+        EVENT_MAP[value] = name
+
+
+def event_monitor(monitor: zmq.Socket) -> None:
+    while monitor.poll():
+        evt: dict[str, Any] = {}
+        mon_evt = recv_monitor_message(monitor)
+        evt.update(mon_evt)
+        evt["description"] = EVENT_MAP[evt["event"]]
+        print(f"Event: {evt}")
+        if evt["event"] == zmq.EVENT_MONITOR_STOPPED:
+            break
+    monitor.close()
+    print()
+    print("event monitor thread done!")
+
+
 def get_filename_template() -> str | None:
     if not args.write:
         return None
@@ -85,74 +111,96 @@ class Writer:
         first: bool,
         barrier: threading.Barrier,
         started: threading.Event,
+        shared_counts=managers.DictProxy,
     ):
         self.port = port
         self.stop = stop
         self.first = first
         self.barrier = barrier
         self.started = started
+        self.shared_counts = shared_counts
 
-        self.listen()
+        try:
+            self.listen()
+        except Exception:
+            # Mark the barrier as broken
+            self.barrier.abort()
+            raise
 
     def listen(self):
         context = zmq.Context()
         self.socket = context.socket(zmq.PULL)
         self.socket.setsockopt(zmq.RCVHWM, 50000)
         self.socket.setsockopt(zmq.RCVTIMEO, 200)
+
+        # if self.first:
+        #     print(f"Starting monitor for socket port {self.port}")
+        #     monitor = self.socket.get_monitor_socket()
+        #     t = threading.Thread(target=event_monitor, args=(monitor,))
+        #     t.start()
+
         connect_addr = f"tcp://{args.host}:{self.port}"
-        print(connect_addr)
         self.socket.connect(connect_addr)
+
         first_out = self.barrier.wait() == 0
         if first_out:
             print(
-                f"{args.num_listeners} threads waiting on ports {port}-{port + args.num_listeners - 1}",
+                f"{args.num_listeners} listeners waiting for images on ports {port}-{port + args.num_listeners - 1}",
                 flush=True,
             )
 
         while not self.stop.is_set():
             self.socket.setsockopt(zmq.RCVTIMEO, 200)
 
-            self.do_acquisition()
-
+            expected_images, num_images = self.do_acquisition()
+            self.shared_counts[self.port] = (expected_images, num_images)
             first_out = self.barrier.wait() == 0
             if first_out and not self.stop.is_set():
                 self.started.clear()
+                print(self.shared_counts)
                 print(
-                    f"All acquisition threads completed at {datetime.datetime.now().isoformat()}",
+                    f"Acquisition completed at {datetime.datetime.now().isoformat().replace('T', ' ')} with {num_images} images",
                     flush=True,
                 )
 
-    def do_acquisition(self):
-        """Run a single acquisition"""
+    def do_acquisition(self) -> Tuple[int, int] | Tuple[None, None]:
+        """
+        Run a single acquisition.
+
+        Returns: Tuple of (expected, observed) image counts
+        """
         # What was the started flag the last time we went round?
-        print(f"{self.port}: starting do_acq")
         last_started = False
         while not stop.is_set():
             try:
                 messages = self.socket.recv_multipart()
-                print("Got initial message")
+                print(f"{self.port}: Initial message")
+                break
             except zmq.Again:
                 if last_started:
                     print(
                         f"{self.port}: Error - waited extra 200ms to start with group but never got messages"
                     )
-                    return
+                    return (None, None)
                 else:
                     # If any of the threads have started, then we should wait only one more round
                     last_started = started.is_set()
         # Don't do anything else if stop requested
         if stop.is_set():
-            return
+            return (None, None)
 
-        # Wait longer once we have started
+        # Wait longer for late frames, once we have started
         self.socket.setsockopt(zmq.RCVTIMEO, 2000)
         self.started.set()
-        print(messages)
         template_path = get_filename_template()
         expected_images = int(caget(PV_COUNT))
-        print(f"{self.port}: Got initial frame, expect {expected_images}", flush=True)
         header = Header.model_validate_json(messages[0])
-        print(f"{self.port}: {header}")
+        if self.first:
+            print(
+                f"Started acquisition {header.acquisition}, expect {expected_images} images",
+                flush=True,
+            )
+
         module_hmi = header.detshape[1] * header.column + header.row
         if template_path:
             print(
@@ -163,7 +211,7 @@ class Writer:
         last_seen = time.monotonic()
         if len(messages) != 2:
             print(f"{self.port}: Error: Got unexpected start message: {messages}")
-            return
+            return (None, None)
 
         num_images = 1
         # Wait for the rest of the data;
@@ -184,6 +232,7 @@ class Writer:
                     flush=True,
                 )
                 break
+        return (expected_images, num_images)
 
 
 print(r""" ███▄ ▄███▓ ▒█████   ██▀███    ▄████  █    ██  ██▓
@@ -201,11 +250,12 @@ print(r""" ███▄ ▄███▓ ▒█████   ██▀███ 
             | |/ |/ / /  / / /_/  __/ /
             |__/|__/_/  /_/\__/\___/_/""")
 
-print(f"Start template file: {get_filename_template()}")
+print(f"Start template file: {get_filename_template() or 'None (not in write mode)'}")
 with Manager() as manager:
     stop = manager.Event()
     barrier = manager.Barrier(args.num_listeners)
     started = manager.Event()
+    states = manager.dict()
 
     # Set the stop signal if we hit ctrl-c
     def handler(_signal, _frame):
@@ -214,14 +264,21 @@ with Manager() as manager:
     signal.signal(signal.SIGINT, handler)
     # Now run the workers
     with ProcessPoolExecutor(max_workers=args.num_listeners) as pool:
+        jobs = []
         for port in range(args.port, args.port + args.num_listeners):
-            pool.submit(
-                Writer,
-                port,
-                stop,
-                first=(port == args.port),
-                barrier=barrier,
-                started=started,
+            jobs.append(
+                pool.submit(
+                    Writer,
+                    port,
+                    stop,
+                    first=(port == args.port),
+                    barrier=barrier,
+                    started=started,
+                    shared_counts=states,
+                )
             )
+        for job in jobs:
+            if not stop:
+                job.result()
 
 print("done")
