@@ -29,13 +29,12 @@ from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Manager, managers
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Tuple
 
 import hdf5plugin  # noqa: F401
 import zmq
 from pydantic import BaseModel
 from rich import print
-from zmq.utils.monitor import recv_monitor_message
 
 PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-EA-EIGER-01:OD:FilePath_RBV"
 PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-EA-EIGER-01:OD:FP:FileName_RBV"
@@ -69,29 +68,6 @@ class Header(BaseModel):
     bitmode: int
     expLength: int
     acquisition: int
-
-
-EVENT_MAP = {}
-print("Event names:")
-for name in dir(zmq):
-    if name.startswith("EVENT_"):
-        value = getattr(zmq, name)
-        print(f"{name:21} : {value:4}")
-        EVENT_MAP[value] = name
-
-
-def event_monitor(monitor: zmq.Socket) -> None:
-    while monitor.poll():
-        evt: dict[str, Any] = {}
-        mon_evt = recv_monitor_message(monitor)
-        evt.update(mon_evt)
-        evt["description"] = EVENT_MAP[evt["event"]]
-        print(f"Event: {evt}")
-        if evt["event"] == zmq.EVENT_MONITOR_STOPPED:
-            break
-    monitor.close()
-    print()
-    print("event monitor thread done!")
 
 
 def get_filename_template() -> str | None:
@@ -132,12 +108,6 @@ class Writer:
         self.socket = context.socket(zmq.PULL)
         self.socket.setsockopt(zmq.RCVHWM, 50000)
         self.socket.setsockopt(zmq.RCVTIMEO, 200)
-
-        # if self.first:
-        #     print(f"Starting monitor for socket port {self.port}")
-        #     monitor = self.socket.get_monitor_socket()
-        #     t = threading.Thread(target=event_monitor, args=(monitor,))
-        #     t.start()
 
         connect_addr = f"tcp://{args.host}:{self.port}"
         self.socket.connect(connect_addr)
