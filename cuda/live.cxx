@@ -607,16 +607,16 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_msgs.push_back(zmq::message_t(send_header.dump()));
     send_msgs.push_back(zmq::message_t(compression_buffer.data(), current_index));
     auto time_push = Timer();
-    // if (send_onwards && zmq::send_multipart(send, send_msgs) == std::nullopt) {
-    //     print(style::warning,
-    //           "{}:{}: Warning: Failed to send onward message. Disabling send until end "
-    //           "of "
-    //           "acquisition.\n",
-    //           _port,
-    //           header.udp_port);
-    //     // Don't send any more this acquisition.
-    //     send_onwards = false;
-    // }
+    if (send_onwards && zmq::send_multipart(send, send_msgs) == std::nullopt) {
+        print(style::warning,
+              "{}:{}: Warning: Failed to send onward message. Disabling send until end "
+              "of "
+              "acquisition.\n",
+              _port,
+              header.udp_port);
+        // Don't send any more this acquisition.
+        send_onwards = false;
+    }
     stats_push += time_push.get_elapsed_seconds();
     stats_process_frame_time += time_frame.get_elapsed_seconds();
 }
