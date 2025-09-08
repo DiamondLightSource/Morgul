@@ -99,7 +99,9 @@ class Writer:
         self.socket = context.socket(zmq.PULL)
         self.socket.setsockopt(zmq.RCVHWM, 50000)
         self.socket.setsockopt(zmq.RCVTIMEO, 200)
-        self.socket.connect(f"tcp://{args.host}:{port}")
+        connect_addr = f"tcp://{args.host}:{self.port}"
+        print(connect_addr)
+        self.socket.connect(connect_addr)
         first_out = self.barrier.wait() == 0
         if first_out:
             print(
@@ -123,10 +125,12 @@ class Writer:
     def do_acquisition(self):
         """Run a single acquisition"""
         # What was the started flag the last time we went round?
+        print(f"{self.port}: starting do_acq")
         last_started = False
         while not stop.is_set():
             try:
                 messages = self.socket.recv_multipart()
+                print("Got initial message")
             except zmq.Again:
                 if last_started:
                     print(
