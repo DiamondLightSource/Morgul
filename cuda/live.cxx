@@ -483,7 +483,8 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
                 print("Starting pedestal measurement run\n");
             }
         } else {
-            if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())) {
+            if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())
+                && !header.dls.raw) {
                 print(_args.require_pedestals ? style::error : style::warning,
                       "Warning: Do not have pedestals for {:.2f} ms HMI={}, cannot "
                       "correct.\n",
