@@ -750,9 +750,6 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
         // We had some error earlier that means we don't trust this acquisition
         return;
     }
-    // std::vector<uint32_t> udpPort;
-    //         std::vector<uint64_t> completeFrames;
-    //         std::vector<uint64_t> lastFrameIndex;
     std::sort(ctx.frame_times_a.begin(), ctx.frame_times_a.end());
     std::sort(ctx.frame_times_b.begin(), ctx.frame_times_b.end());
     print(
@@ -768,12 +765,14 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
         header.udpPort,
         header.completeFrames,
         header.lastFrameIndex,
-        // ctx.frame_times[static_cast<size_t>(ctx.frame_times.size() / 2)]
-        std::vector<float>(ctx.frame_times_a.end() - 10, ctx.frame_times_a.end()),
-        std::vector<float>(ctx.frame_times_b.end() - 10, ctx.frame_times_b.end()),
+        std::vector<float>(ctx.frame_times_a.size() < 10 ? ctx.frame_times_a.begin()
+                                                         : ctx.frame_times_a.end() - 10,
+                           ctx.frame_times_a.end()),
+        std::vector<float>(ctx.frame_times_b.size() < 10 ? ctx.frame_times_b.begin()
+                                                         : ctx.frame_times_b.end() - 10,
+                           ctx.frame_times_b.end()),
         ctx.cumulative_time[0] * 1000.0 / header.completeFrames[0],
         ctx.cumulative_time[1] * 1000.0 / header.completeFrames[1]);
-    // );
 
     total_processing_time += ctx.cumulative_time[0] + ctx.cumulative_time[1];
 
@@ -848,6 +847,7 @@ auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
     print("Binding sending ZMQ to {}\n", zmq_bind_spec);
     return send;
 }
+
 auto start_receiver(std::stop_token stop,
                     std::barrier<> &sync_barrier,
                     const Arguments &args,
