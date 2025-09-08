@@ -917,41 +917,38 @@ auto do_live(Arguments &args) -> void {
     print("Starting up listeners on TCP ports {}-{}\n",
           args.rx_port,
           args.rx_port + args.rx_listeners - 1);
-    if (!args.require_pedestals) {
-        print(style::warning, "Running without requiring pedestal data\n");
-        // Now we know how many workers, we can construct the global barrier
-        auto barrier = std::barrier{args.rx_listeners};
-        {
-            std::vector<std::jthread> threads;
-            for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
-                 ++port) {
-                threads.emplace_back(start_receiver,
-                                     global_stop.get_token(),
-                                     std::ref(barrier),
-                                     args,
-                                     std::cref(gains),
-                                     std::ref(pedestals),
-                                     port);
-                std::jthread &thread = threads.back();
-                std::string name = fmt::format("listen_{}", port);
-                pthread_setname_np(thread.native_handle(), name.c_str());
-            }
-            while (true) {
-                if (!args.no_progress) {
-                    if (threads_waiting == args.rx_listeners && !in_acquisition) {
-                        spinner("All listeners waiting");
-                    } else {
-                        auto msg = fmt::format(
-                            "  Progress {:3}: {:3.2f} %                  \r",
-                            acquisition_number,
-                            acq_progress);
-                        std::cout << msg << std::flush;
-                    }
-                }
-                std::this_thread::sleep_for(80ms);
-            }
+    // Now we know how many workers, we can construct the global barrier
+    auto barrier = std::barrier{args.rx_listeners};
+    {
+        std::vector<std::jthread> threads;
+        for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
+             ++port) {
+            threads.emplace_back(start_receiver,
+                                 global_stop.get_token(),
+                                 std::ref(barrier),
+                                 args,
+                                 std::cref(gains),
+                                 std::ref(pedestals),
+                                 port);
+            std::jthread &thread = threads.back();
+            std::string name = fmt::format("listen_{}", port);
+            pthread_setname_np(thread.native_handle(), name.c_str());
         }
-        // Only happens if we change to terminate
-        print("All processing complete.\n");
+        while (true) {
+            if (!args.no_progress) {
+                if (threads_waiting == args.rx_listeners && !in_acquisition) {
+                    spinner("All listeners waiting");
+                } else {
+                    auto msg =
+                        fmt::format("  Progress {:3}: {:3.2f} %                  \r",
+                                    acquisition_number,
+                                    acq_progress);
+                    std::cout << msg << std::flush;
+                }
+            }
+            std::this_thread::sleep_for(80ms);
+        }
     }
+    // Only happens if we change to terminate
+    print("All processing complete.\n");
 }
