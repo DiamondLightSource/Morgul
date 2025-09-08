@@ -33,7 +33,7 @@ class PedestalData {
         std::array<shared_device_ptr<pedestal_t[]>, GAIN_MODES.size()>;
     PedestalData(std::filesystem::path path, Detector detector);
     auto get_pedestal(size_t halfmodule_index, uint8_t gain_mode) const
-        -> const Array2D<pedestal_t>& {
+        -> const Array2D<pedestal_t> & {
         return _modules.at(halfmodule_index).at(gain_mode);
     }
     auto exposure_time() const {
