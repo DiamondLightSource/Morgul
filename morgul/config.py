@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 class Detector(str, enum.Enum):
     JF1MD = "jf1md"
     JF4MPSI = "jf4mpsi"
+    JF9MB = "jf9mb"
 
     def __str__(self):
         return self.value
