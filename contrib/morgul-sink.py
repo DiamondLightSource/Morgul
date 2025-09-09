@@ -57,8 +57,11 @@ parser.add_argument("--write", help="Do image file writing", action="store_true"
 parser.add_argument(
     "--start-index", help="The stream index for the first listener", type=int, default=0
 )
+parser.add_argument("-v", "--verbose", help="Show debug output", action="store_true")
 args = parser.parse_args()
-logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+logging.basicConfig(
+    level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s"
+)
 
 
 def caget(pv, as_string: bool = True) -> str:
@@ -132,7 +135,6 @@ class HDF5Writer:
             logger.debug(f"Creating target folder: {filename.parent}")
             filename.parent.mkdir(parents=True)
         if filename != self.current_filename:
-            print(f"{filename} != current {self.current_filename}")
             self.dataset = None
             if self.current_file:
                 self.current_file.close()
@@ -276,7 +278,6 @@ class Writer:
         while not stop.is_set():
             try:
                 messages = self.socket.recv_multipart()
-                print(f"{self.port}: Initial message")
                 break
             except zmq.Again:
                 if last_started:
