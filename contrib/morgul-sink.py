@@ -55,7 +55,7 @@ parser.add_argument("port", help="TCP start port to connect to", type=int)
 parser.add_argument("num_listeners", help="Number of listeners to run", type=int)
 parser.add_argument("--write", help="Do image file writing", action="store_true")
 parser.add_argument(
-    "--start-index", help="The stream index for the first listener", type=int
+    "--start-index", help="The stream index for the first listener", type=int, default=0
 )
 args = parser.parse_args()
 logging.basicConfig(level=logging.DEBUG, format="%(message)s")
