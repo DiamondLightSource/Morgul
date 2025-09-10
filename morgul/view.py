@@ -166,25 +166,30 @@ def view_image(files: dict[Path, h5py.Group], corrected: bool):
     for h5 in files.values():
         # Get the module for this file
         h, w = h5["data"].shape[1:]
-        module = config.get_module_info(detector, h5["column"][()], h5["row"][()])[
-            "module"
-        ]
-        # Work out the transform
-        transform = _module_transforms(module, (h, w), corrected=corrected)
-        limits = (-1, 10) if corrected else None
-        viewer.add_image(
-            h5["data"],
-            name=module,
-            **transform,
-            contrast_limits=limits,
-            gamma=0.8,
-        )
 
-        points[f"{module}"] = _label_for_module(module, (h, w), corrected=corrected)
+        if "column" in h5 and "row" in h5:
+            # We have separate module file... work out where they go
+            module = config.get_module_info(detector, h5["column"][()], h5["row"][()])[
+                "module"
+            ]
+            # Work out the transform
+            transform = _module_transforms(module, (h, w), corrected=corrected)
+            limits = (-1, 10) if corrected else None
+            viewer.add_image(
+                h5["data"],
+                name=module,
+                **transform,
+                contrast_limits=limits,
+                gamma=0.8,
+            )
+            points[f"{module}"] = _label_for_module(module, (h, w), corrected=corrected)
+        else:
+            # Assume we have a full image/VDS
+            viewer.add_image(h5["data"], name="full", gamma=0.8)
 
+    if points:
         pt_text, pt_data = zip(*points.items())
-
-    viewer.add_points(pt_data, text=pt_text, size=0)
+        viewer.add_points(pt_data, text=pt_text, size=0)
 
     viewer.reset_view()
 
