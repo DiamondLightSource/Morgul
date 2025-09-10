@@ -174,12 +174,12 @@ def vds(
                 # Calculate the full-sized module corner destination position
                 x = col * 1032 + fast_offset - 2
                 y = row * 258 + slow_offset - 2
-                print(f"Tile (r={row:2}, c={col:2}) placed at s={y:4}, f={x:4}")
+                # print(f"Tile (r={row:2}, c={col:2}) placed at s={y:4}, f={x:4}")
 
                 for asic in range(4):
                     asic_src_x = 256 * asic
                     asic_dst_x = x + asic * 258
-                    print(f"    Tile ASIC {asic} placed at fast={asic_dst_x:4}")
+                    # print(f"    Tile ASIC {asic} placed at fast={asic_dst_x:4}")
 
                     layout[
                         :, y + 2 : y + 258 - 2, asic_dst_x + 2 : asic_dst_x + 258 - 2
