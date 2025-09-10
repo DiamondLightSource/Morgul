@@ -44,13 +44,17 @@ logger = logging.getLogger(__name__)
 PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-JUNGFRAU-META:FD:FilePath_RBV"
 PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-JUNGFRAU-META:FD:FileName_RBV"
 PV_COUNT = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture"
-PV_CAPTURED = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCaptured"
-PV_SUBFOLDER = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:Subfolder"
+PV_CAPTURED = os.getenv("MORGUL_PV_CAPTURED") or "BL24I-JUNGFRAU-META:FD:NumCaptured"
+PV_SUBFOLDER = os.getenv("MORGUL_PV_SUBFOLDER") or "BL24I-JUNGFRAU-META:FD:Subfolder"
+PV_READY = os.getenv("MORGUL_PV_READY") or "BL24I-JUNGFRAU-META:FD:Ready"
 
 
 CAGET_EXE = shutil.which("caget")
 if not CAGET_EXE:
     sys.exit("Error: caget must be present on the path")
+CAPUT_EXE = shutil.which("caput")
+if not CAPUT_EXE:
+    sys.exit("Error: caput must be present on the path")
 
 parser = ArgumentParser()
 parser.add_argument("host", help="IP to connect to")
@@ -78,6 +82,14 @@ def caget(pv, as_string: bool = True) -> str:
     return proc.stdout.strip()
 
 
+def caput(pv, value: str | int | float) -> None:
+    subprocess.Popen(
+        [CAPUT_EXE, pv, str(value)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 class Header(BaseModel):
     frameIndex: int
     row: int
@@ -100,8 +112,8 @@ def get_filename_template() -> str | None:
     path = Path(caget(PV_PATH, as_string=True))
     name = caget(PV_FILENAME, as_string=True)
     if subfolder:
-        path = path / name
-    return str(path / (name + "{}_{:02}_{:06}.h5"))
+        path = path / f"{{acquisition:04}}_{name}"
+    return str(path / (name + "{acquisition}_{stream:02}_{file_index:06}.h5"))
 
 
 class HDF5Writer:
@@ -132,7 +144,9 @@ class HDF5Writer:
     def _get_filename(self, image_index: int) -> Path:
         return Path(
             self.template.format(
-                self.header.acquisition, self.stream_index, image_index
+                acquisition=self.header.acquisition,
+                stream=self.stream_index,
+                file_index=image_index,
             )
         )
 
@@ -268,6 +282,9 @@ class Writer:
             )
 
         while not self.stop.is_set():
+            if self.first:
+                caput(PV_READY, 1)
+
             self.socket.setsockopt(zmq.RCVTIMEO, 200)
 
             expected_images, num_images, filenames = self.do_acquisition()
@@ -281,6 +298,7 @@ class Writer:
                     f"Acquisition completed at {datetime.datetime.now().isoformat().replace('T', ' ')} with {num_images} images",
                     flush=True,
                 )
+
             if first_out and MORGUL_EXE and len(self.shared_filenames):
                 print("Generating VDS")
                 cmd = [MORGUL_EXE, "vds", *shared_filenames]
@@ -325,6 +343,7 @@ class Writer:
         expected_images = int(caget(PV_COUNT))
         header = Header.model_validate_json(messages[0])
         if self.first:
+            caput(PV_READY, 0)
             print(
                 f"Started acquisition {header.acquisition}, expect {expected_images} images",
                 flush=True,
@@ -349,7 +368,7 @@ class Writer:
         writer = None
         if template_path:
             print(
-                f"{self.port}: Writing new acquisition to {template_path.format(header.acquisition, module_hmi, 0)}",
+                f"{self.port}: Writing new acquisition to {template_path.format(acquisition=header.acquisition, stream=module_hmi, file_index=0)}",
                 flush=True,
             )
             writer = HDF5Writer(
@@ -363,6 +382,9 @@ class Writer:
         num_images = 1
         # Wait for the rest of the data;
         while not stop.is_set() and num_images < expected_images:
+            # Update captured images, but not every frame because uses subprocess
+            if num_images % 10 == 0:
+                caput(PV_CAPTURED, num_images)
             try:
                 messages = self.socket.recv_multipart()
                 last_seen = time.monotonic()
@@ -386,6 +408,8 @@ class Writer:
         if writer:
             writer.close()
             written_filenames = writer.filenames
+        if self.first:
+            caput(PV_CAPTURED, num_images)
         return (expected_images, num_images, written_filenames)
 
 
