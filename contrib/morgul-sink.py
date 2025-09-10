@@ -132,8 +132,12 @@ class HDF5Writer:
         filename = self._get_filename(file_index)
 
         if not filename.parent.is_dir():
-            logger.debug(f"Creating target folder: {filename.parent}")
-            filename.parent.mkdir(parents=True)
+            try:
+                filename.parent.mkdir(parents=True, exist_ok=True)
+                logger.debug(f"Creating target folder: {filename.parent}")
+            except FileExistsError:
+                # Most likely a race condition with other threads
+                pass
         if filename != self.current_filename:
             self.dataset = None
             if self.current_file:
