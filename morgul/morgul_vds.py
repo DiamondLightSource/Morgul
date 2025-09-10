@@ -1,14 +1,16 @@
 import itertools
 import logging
+import os.path
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from pprint import pprint
 from typing import Annotated, NamedTuple, Tuple
 
 import h5py
 import numpy as np
 import typer
+from rich import print
+from tqdm import tqdm
 
 from .config import Detector, get_detector
 
@@ -40,22 +42,41 @@ def vds(
     data_files: Annotated[
         list[Path], typer.Argument(help="Data files, for corrections.", metavar="DATA")
     ],
-    output_filename: Annotated[Path, typer.Option("-o", "--output")] = Path(
-        "merged.h5"
-    ),
+    output_filename: Annotated[Path | None, typer.Option("-o", "--output")] = None,
 ):
     """Merge split modules into single modules"""
     # tiles = dict[Tuple[int, int], h5py.File] = {}
     tiles: dict[Tuple[int, int], Path] = {}
 
     assert data_files, "Cannot merge no data files"
+    # If we don't have an output filename, work out the common prefix
+    common = os.path.commonprefix([str(x.name) for x in data_files])
+    if not common:
+        output_filename = Path("virtual.h5")
+    else:
+        output_filename = Path(f"{common.rstrip('_')}_virtual.h5")
+
+    if len(set(x.parent for x in data_files)) == 1:
+        parent = data_files[0].parent
+        output_filename = parent / output_filename
+
+    # Work out a nice way to print this
+    output_print = str(output_filename)
+    if str(output_filename.parent) == ".":
+        output_print = f"./{output_print}"
+
+    print(f"Reading {len(data_files)} data files")
+    # print(f"Writing VDS to {output_print}")
 
     num_images: int
     dtype: np.dtype
     image_shape: tuple[int, int]
     # Read and validate all the input files
-    for data_file in data_files:
-        logger.info(f"Reading {data_file}")
+    for data_file in tqdm(data_files, leave=False):
+        # Ignore previously generated virtual files
+        if "virtual" in data_file.name:
+            continue
+        # logger.info(f"Reading {data_file}")
         with h5py.File(data_file, "r") as file:
             position = (int(file["column"][()]), int(file["row"][()]))
             if position in tiles:
@@ -74,7 +95,7 @@ def vds(
     # Work out the dataset size
     rows = max(x[1] for x in tiles.keys()) + 1
     cols = max(x[0] for x in tiles.keys()) + 1
-    print(f"Constructing VDS for {rows}x{cols} detector, have {len(tiles)} data sets")
+    print(f"Constructing VDS for {rows} x {cols} detector, have {len(tiles)} data sets")
     assert rows % 2 == 0, "Uneven row count"
 
     detector = get_detector()
@@ -82,8 +103,6 @@ def vds(
         sys.exit(f"Error: Do not know geometry for detector {detector}")
     # geo = GEOMETRIES[detector]
     # TODO: Make this generic, just hardcode for now
-    # total_size_s = rows//2 * geo.mod_size_slow + geo.gap_slow*(rows//2-1)
-    # total_size_f = cols * geo.mod_size_fast + geo.gap_fast*(cols-1)
 
     # Calculations:
     # - Raw data is 256 x 1024 in halfmodules
@@ -139,7 +158,6 @@ def vds(
         layout = h5py.VirtualLayout(
             shape=(num_images, total_size_slow, total_size_fast), dtype=dtype
         )
-        pprint(tiles)
         # For every module, make a source
         for row, slow_offset in zip(range(rows), slow_offsets):
             for col, fast_offset in zip(range(cols), fast_offsets):
@@ -163,34 +181,4 @@ def vds(
         #         out.create_virtual_dataset("data", layout)
         out.create_virtual_dataset("data", layout)
 
-    print(f"Written output to {output_filename}")
-    # for top, bottom in itertools.batched(sorted(rows.keys()), n=2):
-    #     if top % 2 != 0:
-    #         sys.exit(f"Error: Got odd top row {top} ({filenames[top]}")
-    #     common = commonprefix([filenames[top], filenames[bottom]]).rstrip("_")
-    #     output_filename = f"{common}_{top}-{bottom}_merged.h5"
-    #     logger.info(f"Merging rows {top} and {bottom} into {output_filename}")
-
-    #     if rows[top]["data"].shape != rows[bottom]["data"].shape:
-    #         sys.exit(
-    #             f"Error: Data in {filenames[top]} and {filenames[bottom]} look like they should merge but have different shapes."
-    #         )
-    #     shape = rows[top]["data"].shape
-    #     with h5py.File(output_filename, "w") as out:
-    #         layout = h5py.VirtualLayout(
-    #             shape=(shape[0], shape[1] * 2, shape[2]), dtype=rows[top]["data"].dtype
-    #         )
-    #         source_top = h5py.VirtualSource(
-    #             filenames[top].resolve(), "data", shape=shape
-    #         )
-    #         source_btm = h5py.VirtualSource(
-    #             filenames[bottom].resolve(), "data", shape=shape
-    #         )
-    #         layout[:, : shape[1], :] = source_top[:, :, :]
-    #         layout[:, shape[1] :, :] = source_btm[:, :, :]
-    #         out.create_virtual_dataset("data", layout)
-    #         out["row"] = top // 2
-
-    #         # Copy everything else
-    #         for key in rows[top].keys() - {"data", "row"}:
-    #             out[key] = np.copy(rows[top][key])
+    print(f"Written output to {output_print}")
