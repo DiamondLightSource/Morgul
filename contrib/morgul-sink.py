@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-JUNGFRAU-META:FD:FilePath_RBV"
 PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-JUNGFRAU-META:FD:FileName_RBV"
 PV_COUNT = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture"
+PV_CAPTURED = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCaptured"
+PV_SUBFOLDER = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:Subfolder"
+
 
 CAGET_EXE = shutil.which("caget")
 if not CAGET_EXE:
@@ -93,10 +96,12 @@ class Header(BaseModel):
 def get_filename_template() -> str | None:
     if not args.write:
         return None
-    return str(
-        Path(caget(PV_PATH, as_string=True))
-        / (caget(PV_FILENAME, as_string=True) + "{}_{:02}_{:06}.h5")
-    )
+    subfolder = bool(int(caget(PV_SUBFOLDER, as_string=True)))
+    path = Path(caget(PV_PATH, as_string=True))
+    name = caget(PV_FILENAME, as_string=True)
+    if subfolder:
+        path = path / name
+    return str(path / (name + "{}_{:02}_{:06}.h5"))
 
 
 class HDF5Writer:

@@ -13,12 +13,16 @@ class PV(str, Enum):
     Path = "path"
     Name = "name"
     Count = "count"
+    Captured = "captured"
+    Subfolder = "subfolder"
 
 
 PV_NAME = {
     PV.Path: "BL24I-JUNGFRAU-META:FD:FilePath",
     PV.Name: "BL24I-JUNGFRAU-META:FD:FileName",
     PV.Count: "BL24I-JUNGFRAU-META:FD:NumCapture",
+    PV.Captured: "BL24I-JUNGFRAU-META:FD:NumCaptured",
+    PV.Subfolder: "BL24I-JUNGFRAU-META:FD:Subfolder",
 }
 
 CA_FLAGS = {PV.Path: ["-S"]}
