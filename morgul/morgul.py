@@ -15,6 +15,7 @@ from . import (
     morgul_merge,
     morgul_nxmx,
     morgul_pedestal,
+    morgul_set,
     morgul_vds,
 )
 from .watcher import morgul_watch
@@ -84,6 +85,9 @@ app.command(rich_help_panel=CALIBRATION)(morgul_correct.correct)
 app.command(rich_help_panel=CALIBRATION)(morgul_nxmx.nxmx)
 app.command(rich_help_panel=CALIBRATION)(morgul_merge.merge)
 app.command(rich_help_panel=CALIBRATION)(morgul_vds.vds)
+app.command(rich_help_panel=CALIBRATION)(morgul_set.set)
+app.command(rich_help_panel=CALIBRATION)(morgul_set.get)
+
 
 try:
     # view depends on things that might not be installed e.g. napari
