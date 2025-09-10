@@ -106,11 +106,13 @@ def vds(
 
     # Calculations:
     # - Raw data is 256 x 1024 in halfmodules
-    # - Edge pixels are 2x in each dimension, so the actual space this
-    #   takes on the front of the detector is 258x1026. This is what we
-    #   tile.
-    # - We trim the outer layer of pixels for a 254 x 1022 sized inner module
-    # - This module is placed offset 2,2 into a 258x1026 block
+    # - This is formed of 4xASIC (256x256) with gaps between each ASIC
+    # - Edge pixels (including on the ASIC) are 2x in each dimension, so
+    #   the actual space this takes on the front of the detector is:
+    #       256+2 border=258   x   1024 + 2*4 asic = 1032
+    # - We take each 256x256 ASIC and trim the outer layer of pixels for
+    #   a 254x254 block
+    # - Each ASIC is placed offset 2,2+asic_offset spaced in the 258x1032 block
     # - Two half-modules are continous, so we have a 4 pixel gap between them, but
     #   this is handled intrinsically by placing offset panels into 258x1026 blocks
     # - Horizontal gap between modules is 8 pixels
@@ -120,7 +122,7 @@ def vds(
     # Calculate an incrementing offset for each row
     slow_offsets = list(itertools.islice(lazy_cumsum(itertools.cycle([0, 36])), rows))
     # Fast doesn't have any offset except pixel boundaries (is this true?)
-    fast_offsets = [0, 0, 0]
+    fast_offsets = [0, 8, 16]
     # ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
     # │             │  │             │  │             │
     # ├─────────────┤  ├─────────────┤  ├─────────────┤
@@ -152,8 +154,8 @@ def vds(
     # │             │  │             │  │             │
     # └─────────────┘  └─────────────┘  └─────────────┘
     total_size_slow = 258 * rows + slow_offsets[-1] - 4
-    total_size_fast = 1026 * cols - 4
-
+    total_size_fast = 1032 * cols + fast_offsets[-1] - 4
+    print(f"Target image size (s, f) = {total_size_slow}, {total_size_fast}")
     with h5py.File(output_filename, "w") as out:
         layout = h5py.VirtualLayout(
             shape=(num_images, total_size_slow, total_size_fast), dtype=dtype
@@ -169,14 +171,23 @@ def vds(
                 source = h5py.VirtualSource(
                     filename.resolve(), "data", shape=(num_images, *image_shape)
                 )
-                # Calculate the full-sized module corner position
-                x = col * 1026 + fast_offset - 2
+                # Calculate the full-sized module corner destination position
+                x = col * 1032 + fast_offset - 2
                 y = row * 258 + slow_offset - 2
-
-                layout[:, y + 2 : y + 258 - 2, x + 2 : x + 1026 - 2] = source[
-                    :, 1:-1, 1:-1
-                ]
                 print(f"Tile (r={row:2}, c={col:2}) placed at s={y:4}, f={x:4}")
+
+                for asic in range(4):
+                    asic_src_x = 256 * asic
+                    asic_dst_x = x + asic * 258
+                    print(f"    Tile ASIC {asic} placed at fast={asic_dst_x:4}")
+
+                    layout[
+                        :, y + 2 : y + 258 - 2, asic_dst_x + 2 : asic_dst_x + 258 - 2
+                    ] = source[
+                        :,
+                        1:-1,
+                        asic_src_x + 1 : asic_src_x + 256 - 1,
+                    ]
 
         #         out.create_virtual_dataset("data", layout)
         out.create_virtual_dataset("data", layout)
