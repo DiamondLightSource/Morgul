@@ -63,6 +63,10 @@ logging.basicConfig(
     level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s"
 )
 
+MORGUL_EXE = shutil.which("morgul")
+if not MORGUL_EXE:
+    logger.warning("Could not find morgul: Will not autogenerate VDS")
+
 
 def caget(pv, as_string: bool = True) -> str:
     proc = subprocess.run(
@@ -118,6 +122,7 @@ class HDF5Writer:
         self.images_per_file = images_per_file
         self.header = header
         self.stream_index = stream_index
+        self.filenames: list[Path] = []
 
     def _get_filename(self, image_index: int) -> Path:
         return Path(
@@ -146,6 +151,7 @@ class HDF5Writer:
             self.current_file = self._create_new_datafile(
                 filename, file_index, self.header
             )
+            self.filenames.append(filename)
             self.dataset = self.current_file["/data"]
         return self.current_file
 
@@ -216,6 +222,7 @@ class Writer:
         started: threading.Event,
         stream_index: int,
         shared_counts=managers.DictProxy,
+        shared_filenames=managers.ListProxy,
     ):
         self.port = port
         self.stop = stop
@@ -226,6 +233,7 @@ class Writer:
         # Once we have read an HMI it's an error if we change
         self.known_hmi = None
         self.stream_index = stream_index
+        self.shared_filenames = shared_filenames
 
         try:
             self.listen()
@@ -257,7 +265,8 @@ class Writer:
         while not self.stop.is_set():
             self.socket.setsockopt(zmq.RCVTIMEO, 200)
 
-            expected_images, num_images = self.do_acquisition()
+            expected_images, num_images, filenames = self.do_acquisition()
+            self.shared_filenames.extend(filenames)
             self.shared_counts[self.port] = (expected_images, num_images)
             first_out = self.barrier.wait() == 0
             if first_out and not self.stop.is_set():
@@ -267,11 +276,19 @@ class Writer:
                     f"Acquisition completed at {datetime.datetime.now().isoformat().replace('T', ' ')} with {num_images} images",
                     flush=True,
                 )
+            if first_out and MORGUL_EXE and len(self.shared_filenames):
+                print("Generating VDS")
+                cmd = [MORGUL_EXE, "vds", *shared_filenames]
+                print(f"+ {' '.join(str(x) for x in cmd)}")
+                subprocess.run(cmd)
+                self.shared_filenames[:] = []
 
     def write_frame(self, hmi: int, data: bytes):
         pass
 
-    def do_acquisition(self) -> Tuple[int, int] | Tuple[None, None]:
+    def do_acquisition(
+        self,
+    ) -> Tuple[int, int, list[Path]] | Tuple[None, None, list[Path]]:
         """
         Run a single acquisition.
 
@@ -288,13 +305,13 @@ class Writer:
                     print(
                         f"{self.port}: Error - waited extra 200ms to start with group but never got messages"
                     )
-                    return (None, None)
+                    return (None, None, [])
                 else:
                     # If any of the threads have started, then we should wait only one more round
                     last_started = started.is_set()
         # Don't do anything else if stop requested
         if stop.is_set():
-            return (None, None)
+            return (None, None, [])
 
         # Wait longer for late frames, once we have started
         self.socket.setsockopt(zmq.RCVTIMEO, 2000)
@@ -322,7 +339,7 @@ class Writer:
         last_seen = time.monotonic()
         if len(messages) != 2:
             print(f"{self.port}: Error: Got unexpected start message: {messages}")
-            return (None, None)
+            return (None, None, [])
 
         writer = None
         if template_path:
@@ -360,9 +377,11 @@ class Writer:
                     flush=True,
                 )
                 break
+        written_filenames = []
         if writer:
             writer.close()
-        return (expected_images, num_images)
+            written_filenames = writer.filenames
+        return (expected_images, num_images, written_filenames)
 
 
 print(r""" ███▄ ▄███▓ ▒█████   ██▀███    ▄████  █    ██  ██▓
@@ -386,6 +405,7 @@ with Manager() as manager:
     barrier = manager.Barrier(args.num_listeners)
     started = manager.Event()
     states = manager.dict()
+    shared_filenames = manager.list()
 
     # Set the stop signal if we hit ctrl-c
     def handler(_signal, _frame):
@@ -406,6 +426,7 @@ with Manager() as manager:
                     started=started,
                     shared_counts=states,
                     stream_index=(port - args.port) + args.start_index,
+                    shared_filenames=shared_filenames,
                 )
             )
         for job in jobs:
