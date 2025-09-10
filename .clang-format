@@ -25,3 +25,5 @@ IndentCaseLabels: false
 NamespaceIndentation: Inner
 SortIncludes: true
 ReflowComments: false
+# Adopted because code already in this, and clang-format 21 forces
+PointerAlignment: Right

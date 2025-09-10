@@ -17,11 +17,11 @@ template <herr_t(D)(hid_t)>
 struct H5Cleanup {
     H5Cleanup() : id(-1) {}
     H5Cleanup(hid_t id) : id(id) {}
-    H5Cleanup(const H5Cleanup&) = delete;
-    H5Cleanup(H5Cleanup&& other) : id(other.id) {
+    H5Cleanup(const H5Cleanup &) = delete;
+    H5Cleanup(H5Cleanup &&other) : id(other.id) {
         other.id = -1;
     }
-    H5Cleanup& operator=(H5Cleanup&& other) {
+    H5Cleanup &operator=(H5Cleanup &&other) {
         std::swap((*this).id, other.id);
         return *this;
     }

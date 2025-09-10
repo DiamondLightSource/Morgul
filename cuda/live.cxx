@@ -102,9 +102,9 @@ auto read_boolish(std::string value) -> bool {
     if (value.size() == 0) {
         return false;
     }
-    if (value != "true" || value != "false") {
+    if (value != "true" && value != "false") {
         throw std::runtime_error(
-            fmt::format("Got non-boolish json value for pedestal: '{}'", value));
+            fmt::format("Got non-boolish json value: '{}'", value));
     }
     return value == "true";
 }
@@ -483,7 +483,8 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
                 print("Starting pedestal measurement run\n");
             }
         } else {
-            if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())) {
+            if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())
+                && !header.dls.raw) {
                 print(_args.require_pedestals ? style::error : style::warning,
                       "Warning: Do not have pedestals for {:.2f} ms HMI={}, cannot "
                       "correct.\n",
@@ -601,22 +602,23 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     send_header["row"] = header.row;
     send_header["column"] = header.column;
     send_header["shape"] = header.shape;
+    send_header["detshape"] = header.detshape;
     send_header["bitmode"] = header.bitmode;
     send_header["expLength"] = header.expLength;
     send_header["acquisition"] = acquisition_number.load();
     send_msgs.push_back(zmq::message_t(send_header.dump()));
     send_msgs.push_back(zmq::message_t(compression_buffer.data(), current_index));
     auto time_push = Timer();
-    // if (send_onwards && zmq::send_multipart(send, send_msgs) == std::nullopt) {
-    //     print(style::warning,
-    //           "{}:{}: Warning: Failed to send onward message. Disabling send until end "
-    //           "of "
-    //           "acquisition.\n",
-    //           _port,
-    //           header.udp_port);
-    //     // Don't send any more this acquisition.
-    //     send_onwards = false;
-    // }
+    if (send_onwards && zmq::send_multipart(send, send_msgs) == std::nullopt) {
+        print(style::warning,
+              "{}:{}: Warning: Failed to send onward message. Disabling send until end "
+              "of "
+              "acquisition.\n",
+              _port,
+              header.udp_port);
+        // Don't send any more this acquisition.
+        send_onwards = false;
+    }
     stats_push += time_push.get_elapsed_seconds();
     stats_process_frame_time += time_frame.get_elapsed_seconds();
 }
@@ -671,9 +673,8 @@ struct AcqContext {
     std::vector<float> frame_times_a;
     std::vector<float> frame_times_b;
     std::array<float, 2> cumulative_time;
-    // zmq::socket_t &zmq_send;
-    /// Bit depth, from start acquisition header
-    /// Detector shape, from start acquisition header
+    /// Are we skipping this acquisition e.g. we found something wrong?
+    bool skip_acquisition;
 };
 
 // ━  ┃  ┏ ┳ ┓ ┏ ┯ ┓ ┏ ┳ ┓ ┏ ┯ ┓
@@ -704,6 +705,7 @@ auto header_from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader
 
 int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPointer) {
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
+    ctx.skip_acquisition = false;
     assert(header.udpPort.size() == 2);
     ctx.udp_ports = {static_cast<uint16_t>(header.udpPort[0]),
                      static_cast<uint16_t>(header.udpPort[1])};
@@ -744,9 +746,10 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
 // /** Acquisition Finished Call back */
 void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer) {
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
-    // std::vector<uint32_t> udpPort;
-    //         std::vector<uint64_t> completeFrames;
-    //         std::vector<uint64_t> lastFrameIndex;
+    if (ctx.skip_acquisition) {
+        // We had some error earlier that means we don't trust this acquisition
+        return;
+    }
     std::sort(ctx.frame_times_a.begin(), ctx.frame_times_a.end());
     std::sort(ctx.frame_times_b.begin(), ctx.frame_times_b.end());
     print(
@@ -762,12 +765,14 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
         header.udpPort,
         header.completeFrames,
         header.lastFrameIndex,
-        // ctx.frame_times[static_cast<size_t>(ctx.frame_times.size() / 2)]
-        std::vector<float>(ctx.frame_times_a.end() - 10, ctx.frame_times_a.end()),
-        std::vector<float>(ctx.frame_times_b.end() - 10, ctx.frame_times_b.end()),
+        std::vector<float>(ctx.frame_times_a.size() < 10 ? ctx.frame_times_a.begin()
+                                                         : ctx.frame_times_a.end() - 10,
+                           ctx.frame_times_a.end()),
+        std::vector<float>(ctx.frame_times_b.size() < 10 ? ctx.frame_times_b.begin()
+                                                         : ctx.frame_times_b.end() - 10,
+                           ctx.frame_times_b.end()),
         ctx.cumulative_time[0] * 1000.0 / header.completeFrames[0],
         ctx.cumulative_time[1] * 1000.0 / header.completeFrames[1]);
-    // );
 
     total_processing_time += ctx.cumulative_time[0] + ctx.cumulative_time[1];
 
@@ -842,6 +847,7 @@ auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
     print("Binding sending ZMQ to {}\n", zmq_bind_spec);
     return send;
 }
+
 auto start_receiver(std::stop_token stop,
                     std::barrier<> &sync_barrier,
                     const Arguments &args,
@@ -869,7 +875,8 @@ auto start_receiver(std::stop_token stop,
     AcqContext context{.handlers = {&handler, &handler2},
                        .is_first_receiver = (port == args.rx_port),
                        .pedestals = pedestals,
-                       .port = port};
+                       .port = port,
+                       .skip_acquisition = false};
 
     r.registerCallBackStartAcquisition(StartAcq, &context);
     r.registerCallBackAcquisitionFinished(EndAcq, &context);
@@ -895,6 +902,8 @@ auto do_live(Arguments &args) -> void {
         print("Detector: {}\n", JF1M_Display);
     } else if (args.detector == JF9M_SIM) {
         print("Detector: {}\n", JF9M_SIM_Display);
+    } else if (args.detector == JF9M) {
+        print("Detector: {}\n", JF9M_Display);
     } else {
         print("Detector: {}\n", styled(args.detector, emphasis::bold));
     }
@@ -908,41 +917,38 @@ auto do_live(Arguments &args) -> void {
     print("Starting up listeners on TCP ports {}-{}\n",
           args.rx_port,
           args.rx_port + args.rx_listeners - 1);
-    if (!args.require_pedestals) {
-        print(style::warning, "Running without requiring pedestal data\n");
-        // Now we know how many workers, we can construct the global barrier
-        auto barrier = std::barrier{args.rx_listeners};
-        {
-            std::vector<std::jthread> threads;
-            for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
-                 ++port) {
-                threads.emplace_back(start_receiver,
-                                     global_stop.get_token(),
-                                     std::ref(barrier),
-                                     args,
-                                     std::cref(gains),
-                                     std::ref(pedestals),
-                                     port);
-                std::jthread &thread = threads.back();
-                std::string name = fmt::format("listen_{}", port);
-                pthread_setname_np(thread.native_handle(), name.c_str());
-            }
-            while (true) {
-                if (!args.no_progress) {
-                    if (threads_waiting == args.rx_listeners && !in_acquisition) {
-                        spinner("All listeners waiting");
-                    } else {
-                        auto msg = fmt::format(
-                            "  Progress {:3}: {:3.2f} %                  \r",
-                            acquisition_number,
-                            acq_progress);
-                        std::cout << msg << std::flush;
-                    }
-                }
-                std::this_thread::sleep_for(80ms);
-            }
+    // Now we know how many workers, we can construct the global barrier
+    auto barrier = std::barrier{args.rx_listeners};
+    {
+        std::vector<std::jthread> threads;
+        for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
+             ++port) {
+            threads.emplace_back(start_receiver,
+                                 global_stop.get_token(),
+                                 std::ref(barrier),
+                                 args,
+                                 std::cref(gains),
+                                 std::ref(pedestals),
+                                 port);
+            std::jthread &thread = threads.back();
+            std::string name = fmt::format("listen_{}", port);
+            pthread_setname_np(thread.native_handle(), name.c_str());
         }
-        // Only happens if we change to terminate
-        print("All processing complete.\n");
+        while (true) {
+            if (!args.no_progress) {
+                if (threads_waiting == args.rx_listeners && !in_acquisition) {
+                    spinner("All listeners waiting");
+                } else {
+                    auto msg =
+                        fmt::format("  Progress {:3}: {:3.2f} %                  \r",
+                                    acquisition_number,
+                                    acq_progress);
+                    std::cout << msg << std::flush;
+                }
+            }
+            std::this_thread::sleep_for(80ms);
+        }
     }
+    // Only happens if we change to terminate
+    print("All processing complete.\n");
 }

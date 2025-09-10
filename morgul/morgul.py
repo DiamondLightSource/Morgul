@@ -15,6 +15,7 @@ from . import (
     morgul_merge,
     morgul_nxmx,
     morgul_pedestal,
+    morgul_vds,
 )
 from .watcher import morgul_watch
 
@@ -58,7 +59,7 @@ def common(
             help="The detector to run corrections for",
             case_sensitive=False,
         ),
-    ] = config.Detector.JF1MD.value,  # type: ignore
+    ] = config.Detector.JF9MB.value,  # type: ignore
 ) -> None:
     # Currently, a choice of context or config function
     obj = ctx.ensure_object(dict)
@@ -82,6 +83,7 @@ app.command(rich_help_panel=CALIBRATION)(morgul_mask.mask)
 app.command(rich_help_panel=CALIBRATION)(morgul_correct.correct)
 app.command(rich_help_panel=CALIBRATION)(morgul_nxmx.nxmx)
 app.command(rich_help_panel=CALIBRATION)(morgul_merge.merge)
+app.command(rich_help_panel=CALIBRATION)(morgul_vds.vds)
 
 try:
     # view depends on things that might not be installed e.g. napari

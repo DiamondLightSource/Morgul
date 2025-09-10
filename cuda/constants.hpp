@@ -27,6 +27,7 @@ using pixel_t = uint16_t;
 #ifndef OLD_CUDA
 constexpr static Detector JF1M{"JF1M"};
 constexpr static Detector JF9M_SIM{"JF9M-SIM"};
+constexpr static Detector JF9M{"JF9M"};
 
 /// Maps detector name to known module names and positions
 const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETECTORS =
@@ -51,11 +52,33 @@ const std::map<Detector, std::map<std::string, std::tuple<int, int>>> KNOWN_DETE
           {"SIM_M23", {0, 15}},
           {"SIM_M24", {0, 16}},
           {"SIM_M25", {0, 17}},
+      }},
+     {JF9M,
+      {
+          {"M595", {0, 0}},
+          {"M036", {1, 0}},
+          {"M642", {2, 0}},
+          {"M626", {0, 1}},
+          {"M603", {1, 1}},
+          {"M591", {2, 1}},
+          {"M629", {0, 2}},
+          {"M594", {1, 2}},
+          {"M625", {2, 2}},
+          {"M597", {0, 3}},
+          {"M608", {1, 3}},
+          {"M596", {2, 3}},
+          {"M443", {0, 4}},
+          {"M578", {1, 4}},
+          {"M588", {2, 4}},
+          {"M627", {0, 5}},
+          {"M592", {1, 5}},
+          {"M628", {2, 5}},
       }}};
 
 /// Size of detector, in (columns, rows)
 const std::map<Detector, std::tuple<int, int>> DETECTOR_SIZE = {{JF1M, {1, 2}},
-                                                                {JF9M_SIM, {1, 18}}};
+                                                                {JF9M_SIM, {1, 18}},
+                                                                {JF9M, {3, 6}}};
 
 static const std::string JF1M_Display{
     "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m1\e[39m\e[38;5;93mM\e["
@@ -65,6 +88,10 @@ static const std::string JF9M_SIM_Display{
     "\e[38;2;207;174;2mJ\e[39m\e[38;2;235;133;15mF\e[39m\e[38;2;251;91;40m9\e[39m\e[38;"
     "2;254;53;76mM\e[39m\e[38;2;243;24;116m-\e[39m\e[38;2;219;5;158mS\e[39m\e[38;2;185;"
     "1;197mI\e[39m\e[38;2;145;10;228mM\e[39m\e[38;2;103;32;248m\e[39m"};
+
+static const std::string JF9M_Display{
+    "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m9\e[39m\e[38;5;93mM\e["
+    "39m\e[38;5;33m\e[39m\e[0m\n"};
 
 #endif
 
