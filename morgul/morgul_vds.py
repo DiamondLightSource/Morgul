@@ -166,7 +166,7 @@ def vds(
                 if (col, row) not in tiles:
                     print(f"No entry for {(row, col)=}")
                     break
-                filename = tiles[col, row]
+                filename = tiles[col, rows - row - 1]
 
                 source = h5py.VirtualSource(
                     filename.resolve(), "data", shape=(num_images, *image_shape)
