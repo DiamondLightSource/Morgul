@@ -8,6 +8,7 @@
 #     "zmq",
 #     "pydantic>2",
 #     "rich",
+#     "tqdm",
 # ]
 # ///
 """
@@ -38,12 +39,15 @@ import numpy as np
 import zmq
 from pydantic import BaseModel
 from rich import print
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-JUNGFRAU-META:FD:FilePath_RBV"
 PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-JUNGFRAU-META:FD:FileName_RBV"
-PV_COUNT = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture"
+PV_COUNT = (
+    os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture_RBV"
+)  # BL24I-EA-JFRAU-01:FramesPerAcq_RBV
 PV_CAPTURED = os.getenv("MORGUL_PV_CAPTURED") or "BL24I-JUNGFRAU-META:FD:NumCaptured"
 PV_SUBFOLDER = os.getenv("MORGUL_PV_SUBFOLDER") or "BL24I-JUNGFRAU-META:FD:Subfolder"
 PV_READY = os.getenv("MORGUL_PV_READY") or "BL24I-JUNGFRAU-META:FD:Ready"
@@ -155,14 +159,15 @@ class HDF5Writer:
         file_index = self._get_file_index(image_index)
         filename = self._get_filename(file_index)
 
-        if not filename.parent.is_dir():
-            try:
-                filename.parent.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"Creating target folder: {filename.parent}")
-            except FileExistsError:
-                # Most likely a race condition with other threads
-                pass
         if filename != self.current_filename:
+            # Make sure the directory exists
+            if not filename.parent.is_dir():
+                try:
+                    filename.parent.mkdir(parents=True, exist_ok=True)
+                    logger.debug(f"Creating target folder: {filename.parent}")
+                except FileExistsError:
+                    # Most likely a race condition with other threads
+                    pass
             self.dataset = None
             if self.current_file:
                 self.current_file.close()
@@ -344,10 +349,16 @@ class Writer:
         header = Header.model_validate_json(messages[0])
         if self.first:
             caput(PV_READY, 0)
+            if int(caget(PV_CAPTURED)) != 0:
+                print(
+                    "Warning: Started capture but captured image count != 0. Ophyd should reset this!"
+                )
+
             print(
                 f"Started acquisition {header.acquisition}, expect {expected_images} images",
                 flush=True,
             )
+            progress = tqdm(total=expected_images, desc="Stream 1")
 
         module_hmi = header.detshape[1] * header.column + header.row
         assert module_hmi == header.hmi
@@ -381,10 +392,12 @@ class Writer:
 
         num_images = 1
         # Wait for the rest of the data;
-        while not stop.is_set() and num_images < expected_images:
+        while num_images < expected_images:
             # Update captured images, but not every frame because uses subprocess
-            if num_images % 10 == 0:
+            if num_images % 100 == 0 and self.first:
                 caput(PV_CAPTURED, num_images)
+            if self.first:
+                progress.update()
             try:
                 messages = self.socket.recv_multipart()
                 last_seen = time.monotonic()
@@ -410,6 +423,7 @@ class Writer:
             written_filenames = writer.filenames
         if self.first:
             caput(PV_CAPTURED, num_images)
+            progress.close()
         return (expected_images, num_images, written_filenames)
 
 
