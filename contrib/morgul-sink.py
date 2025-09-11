@@ -11,6 +11,7 @@
 #     "tqdm",
 # ]
 # ///
+
 """
 Morgul Sink - Connect to Morgul and receive data stream.
 
@@ -18,9 +19,12 @@ This allows an actual load to be attached to the output of Morgul, so
 that it isn't processing then discarding data.
 """
 
+from __future__ import annotations
+
 import datetime
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -45,9 +49,7 @@ logger = logging.getLogger(__name__)
 
 PV_PATH = os.getenv("MORGUL_PV_PATH") or "BL24I-JUNGFRAU-META:FD:FilePath_RBV"
 PV_FILENAME = os.getenv("MORGUL_PV_FILENAME") or "BL24I-JUNGFRAU-META:FD:FileName_RBV"
-PV_COUNT = (
-    os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture_RBV"
-)  # BL24I-EA-JFRAU-01:FramesPerAcq_RBV
+PV_COUNT = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture_RBV"
 PV_CAPTURED = os.getenv("MORGUL_PV_CAPTURED") or "BL24I-JUNGFRAU-META:FD:NumCaptured"
 PV_SUBFOLDER = os.getenv("MORGUL_PV_SUBFOLDER") or "BL24I-JUNGFRAU-META:FD:Subfolder"
 PV_READY = os.getenv("MORGUL_PV_READY") or "BL24I-JUNGFRAU-META:FD:Ready"
@@ -109,14 +111,21 @@ class Header(BaseModel):
         return self.detshape[1] * self.column + self.row
 
 
-def get_filename_template() -> str | None:
+def get_filename_template(acquisition: int | str) -> str | None:
     if not args.write:
         return None
     subfolder = bool(int(caget(PV_SUBFOLDER, as_string=True)))
     path = Path(caget(PV_PATH, as_string=True))
     name = caget(PV_FILENAME, as_string=True)
     if subfolder:
-        path = path / f"{{acquisition:04}}_{name}"
+        # Get a list of subfolders here already, so that we ensure we always number higher
+        candidates = [
+            x for x in path.iterdir() if x.is_dir() and re.match(r"^\d+_", x.name)
+        ]
+        max_acq = max([int(x.name.split("_", maxsplit=1)[0]) for x in candidates])
+        print(f"Max known acq is {max_acq}")
+        folder_number = max(max_acq + 1, acquisition)
+        path = path / f"{folder_number:04}_{name}"
     return str(path / (name + "{acquisition}_{stream:02}_{file_index:06}.h5"))
 
 
@@ -245,8 +254,9 @@ class Writer:
         barrier: threading.Barrier,
         started: threading.Event,
         stream_index: int,
-        shared_counts=managers.DictProxy,
-        shared_filenames=managers.ListProxy,
+        shared_counts: managers.DictProxy,
+        shared_filenames: managers.ListProxy,
+        current_template: tuple[managers.ValueProxy, threading.Lock],
     ):
         self.port = port
         self.stop = stop
@@ -258,6 +268,7 @@ class Writer:
         self.known_hmi = None
         self.stream_index = stream_index
         self.shared_filenames = shared_filenames
+        self.current_template = current_template
 
         try:
             self.listen()
@@ -344,9 +355,18 @@ class Writer:
         # Wait longer for late frames, once we have started
         self.socket.setsockopt(zmq.RCVTIMEO, 2000)
         self.started.set()
-        template_path = get_filename_template()
+
         expected_images = int(caget(PV_COUNT))
         header = Header.model_validate_json(messages[0])
+
+        # Get the current template, once
+        with self.current_template[1]:
+            if not self.current_template[0].value:
+                template_path = get_filename_template(header.acquisition)
+                self.current_template[0].value = template_path
+            else:
+                template_path = self.current_template[0].value
+
         if self.first:
             caput(PV_READY, 0)
             if int(caget(PV_CAPTURED)) != 0:
@@ -421,6 +441,10 @@ class Writer:
         if writer:
             writer.close()
             written_filenames = writer.filenames
+        # Discard the template
+        with self.current_template[1]:
+            if self.current_template[0].value:
+                self.current_template[0].value = ""
         if self.first:
             caput(PV_CAPTURED, num_images)
             progress.close()
@@ -442,13 +466,14 @@ print(r""" ███▄ ▄███▓ ▒█████   ██▀███ 
             | |/ |/ / /  / / /_/  __/ /
             |__/|__/_/  /_/\__/\___/_/""")
 
-print(f"Start template file: {get_filename_template() or 'None (not in write mode)'}")
+print(f"Start template file: {get_filename_template(0) or 'None (not in write mode)'}")
 with Manager() as manager:
     stop = manager.Event()
     barrier = manager.Barrier(args.num_listeners)
     started = manager.Event()
     states = manager.dict()
     shared_filenames = manager.list()
+    current_template = (manager.Value(str, ""), manager.Lock())
 
     # Set the stop signal if we hit ctrl-c
     def handler(_signal, _frame):
@@ -470,6 +495,7 @@ with Manager() as manager:
                     shared_counts=states,
                     stream_index=(port - args.port) + args.start_index,
                     shared_filenames=shared_filenames,
+                    current_template=current_template,
                 )
             )
         for job in jobs:
