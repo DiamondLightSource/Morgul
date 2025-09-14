@@ -646,7 +646,8 @@ auto DataStreamHandler::end_acquisition() -> void {
                                         new_pedestals.data(),
                                         reinterpret_cast<bool *>(pedestal_mask.data()));
         CUDA_CHECK(cudaStreamSynchronize(stream));
-
+        // Reset the buffers, ready for next time
+        reset_pedestal_buffers();
         pedestals.register_pedestals(exposure_ns,
                                      known_hmi.value(),
                                      {new_pedestals.data(), HM_PIXELS},
