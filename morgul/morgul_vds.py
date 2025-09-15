@@ -190,6 +190,7 @@ def vds(
                     ]
 
         #         out.create_virtual_dataset("data", layout)
-        out.create_virtual_dataset("data", layout)
+        fill = {np.int16:0x8000, np.uint16:0x8000, np.int32:0x8000000, np.uint16:0x8000000}[dtype]
+        out.create_virtual_dataset("data", layout, fillvalue=fill)
 
     print(f"Written output to {output_print}")
