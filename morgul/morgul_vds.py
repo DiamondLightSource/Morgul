@@ -120,7 +120,7 @@ def vds(
     # - To avoid a bare strip round all sides, shift -2,-2 and reduce dimensions by 4
 
     # Calculate an incrementing offset for each row
-    slow_offsets = list(itertools.islice(lazy_cumsum(itertools.cycle([0, 36])), rows))
+    slow_offsets = list(itertools.islice(lazy_cumsum(itertools.cycle([0, 34])), rows))
     # Fast doesn't have any offset except pixel boundaries (is this true?)
     fast_offsets = [0, 8, 16]
     # ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
