@@ -332,23 +332,30 @@ class Writer:
                 print(f"+ {' '.join(str(x) for x in cmd)}")
                 subprocess.run(cmd)
                 # Wait for the collection_info.json to appear
-                time.sleep(5)
-                print("Generating NXS")
-                find_virtual = list(shared_filenames[0].parent.glob("*_virtual*"))
-                if len(find_virtual) != 1:
-                    print(
-                        f"Warning: Found more than one virtual file, not running nxmx: {find_virtual}"
-                    )
+                collection_info = shared_filenames[0].parent / "collection_info.json"
+                for _ in range(20):
+                    if collection_info.is_file():
+                        break
+                    else:
+                        time.sleep(0.5)
                 else:
-                    cmd = [
-                        MORGUL_EXE,
-                        "nxmx",
-                        "--energy",
-                        str(read_energy_kev()),
-                        *find_virtual,
-                    ]
-                    print(f"+ {' '.join(str(x) for x in cmd)}")
-                    subprocess.run(cmd)
+                    print("Warning: Waited but no collection_info.json appeared")
+                print("Generating NXS")
+                # find_virtual = list(shared_filenames[0].parent.glob("*_virtual*"))
+                # if len(find_virtual) != 1:
+                #     print(
+                #         f"Warning: Found more than one virtual file, not running nxmx: {find_virtual}"
+                #     )
+                # else:
+                cmd = [
+                    MORGUL_EXE,
+                    "nxmx",
+                    "--energy",
+                    str(read_energy_kev()),
+                    *shared_filenames,
+                ]
+                print(f"+ {' '.join(str(x) for x in cmd)}")
+                subprocess.run(cmd)
                 self.shared_filenames[:] = []
 
     def write_frame(self, hmi: int, data: bytes):

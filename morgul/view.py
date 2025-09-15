@@ -174,7 +174,7 @@ def view_image(files: dict[Path, h5py.Group], corrected: bool):
             ]
             # Work out the transform
             transform = _module_transforms(module, (h, w), corrected=corrected)
-            limits = (-1, 10) if corrected else None
+            limits = (-1, 10) if corrected else (-1, 10)
             viewer.add_image(
                 h5["data"],
                 name=module,

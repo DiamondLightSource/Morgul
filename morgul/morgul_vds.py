@@ -38,35 +38,15 @@ def lazy_cumsum(series: Iterable[int]) -> Iterator[int]:
         sum += value
 
 
-def vds(
-    data_files: Annotated[
-        list[Path], typer.Argument(help="Data files, for corrections.", metavar="DATA")
-    ],
-    output_filename: Annotated[Path | None, typer.Option("-o", "--output")] = None,
-):
-    """Merge split modules into single modules"""
-    # tiles = dict[Tuple[int, int], h5py.File] = {}
-    tiles: dict[Tuple[int, int], Path] = {}
-
-    assert data_files, "Cannot merge no data files"
-    # If we don't have an output filename, work out the common prefix
+def common_output_filename(data_files: list[Path], suffix="_virtual.h5") -> Path:
+    if len(parent := {x.resolve().parent for x in data_files}) != 1:
+        raise RuntimeError("Input files are spread over multiple folders")
     common = os.path.commonprefix([str(x.name) for x in data_files])
-    if not common:
-        output_filename = Path("virtual.h5")
-    else:
-        output_filename = Path(f"{common.rstrip('_')}_virtual.h5")
+    return parent.pop() / f"{common.rstrip('_')}{suffix}"
 
-    if len(set(x.parent for x in data_files)) == 1:
-        parent = data_files[0].parent
-        output_filename = parent / output_filename
 
-    # Work out a nice way to print this
-    output_print = str(output_filename)
-    if str(output_filename.parent) == ".":
-        output_print = f"./{output_print}"
-
-    print(f"Reading {len(data_files)} data files")
-    # print(f"Writing VDS to {output_print}")
+def create_vds_dataset(parent: h5py.Group, dataset_name: str, data_files: list[Path]):
+    tiles: dict[Tuple[int, int], Path] = {}
 
     num_images: int
     dtype: np.dtype
@@ -156,40 +136,72 @@ def vds(
     total_size_slow = 258 * rows + slow_offsets[-1] - 4
     total_size_fast = 1032 * cols + fast_offsets[-1] - 4
     print(f"Target image size (s, f) = {total_size_slow}, {total_size_fast}")
+    layout = h5py.VirtualLayout(
+        shape=(num_images, total_size_slow, total_size_fast), dtype=dtype
+    )
+    # For every module, make a source
+    for row, slow_offset in zip(range(rows), slow_offsets):
+        for col, fast_offset in zip(range(cols), fast_offsets):
+            if (col, row) not in tiles:
+                print(f"No entry for {(row, col)=}")
+                break
+            filename = tiles[col, rows - row - 1]
+
+            source = h5py.VirtualSource(
+                filename.resolve(), "data", shape=(num_images, *image_shape)
+            )
+            # Calculate the full-sized module corner destination position
+            x = col * 1032 + fast_offset - 2
+            y = row * 258 + slow_offset - 2
+            # print(f"Tile (r={row:2}, c={col:2}) placed at s={y:4}, f={x:4}")
+
+            for asic in range(4):
+                asic_src_x = 256 * asic
+                asic_dst_x = x + asic * 258
+                # print(f"    Tile ASIC {asic} placed at fast={asic_dst_x:4}")
+
+                layout[
+                    :, y + 2 : y + 258 - 2, asic_dst_x + 2 : asic_dst_x + 258 - 2
+                ] = source[
+                    :,
+                    1:-1,
+                    asic_src_x + 1 : asic_src_x + 256 - 1,
+                ]
+
+    parent.create_virtual_dataset(dataset_name, layout, fillvalue=0x8000)
+
+
+def vds(
+    data_files: Annotated[
+        list[Path], typer.Argument(help="Data files, for corrections.", metavar="DATA")
+    ],
+    output_filename: Annotated[Path | None, typer.Option("-o", "--output")] = None,
+):
+    """Merge split modules into single modules"""
+    assert data_files, "Cannot merge no data files"
+
+    assert len({x.resolve().parent for x in data_files}) == 1, (
+        "Input files are spread over multiple folders"
+    )
+
+    # If we don't have an output filename, work out the common prefix
+    if not output_filename:
+        output_filename = common_output_filename(data_files)
+
+    # Even if the user supplied their own filename, write the output
+    # file to the same place as the images (if all in same place)
+    if len(set(x.parent for x in data_files)) == 1:
+        parent = data_files[0].parent
+        output_filename = parent / output_filename.name
+
+    # Work out a nice way to print this
+    output_print = str(output_filename)
+    if str(output_filename.parent) == ".":
+        output_print = f"./{output_print}"
+
+    print(f"Reading {len(data_files)} data files")
+
     with h5py.File(output_filename, "w") as out:
-        layout = h5py.VirtualLayout(
-            shape=(num_images, total_size_slow, total_size_fast), dtype=dtype
-        )
-        # For every module, make a source
-        for row, slow_offset in zip(range(rows), slow_offsets):
-            for col, fast_offset in zip(range(cols), fast_offsets):
-                if (col, row) not in tiles:
-                    print(f"No entry for {(row, col)=}")
-                    break
-                filename = tiles[col, rows - row - 1]
-
-                source = h5py.VirtualSource(
-                    filename.resolve(), "data", shape=(num_images, *image_shape)
-                )
-                # Calculate the full-sized module corner destination position
-                x = col * 1032 + fast_offset - 2
-                y = row * 258 + slow_offset - 2
-                # print(f"Tile (r={row:2}, c={col:2}) placed at s={y:4}, f={x:4}")
-
-                for asic in range(4):
-                    asic_src_x = 256 * asic
-                    asic_dst_x = x + asic * 258
-                    # print(f"    Tile ASIC {asic} placed at fast={asic_dst_x:4}")
-
-                    layout[
-                        :, y + 2 : y + 258 - 2, asic_dst_x + 2 : asic_dst_x + 258 - 2
-                    ] = source[
-                        :,
-                        1:-1,
-                        asic_src_x + 1 : asic_src_x + 256 - 1,
-                    ]
-
-        #         out.create_virtual_dataset("data", layout)
-        out.create_virtual_dataset("data", layout, fillvalue=0x8000)
+        create_vds_dataset(out, "data", data_files)
 
     print(f"Written output to {output_print}")

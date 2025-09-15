@@ -23,6 +23,9 @@ import numpy as np
 import pint
 import typer
 from pydantic import BaseModel, Field
+from rich import print
+
+from .morgul_vds import common_output_filename, create_vds_dataset
 
 T = TypeVar("T")
 
@@ -396,7 +399,8 @@ def nxmx(
 ):
     """Create an NXmx Nexus file pointing to corrected Jungfrau data."""
 
-    print(f"Reading {BOLD}{input}{NC}")
+    print(f"Reading {len(input)} files:")
+    print("\n".join(f"  - {x}" for x in input))
 
     # ep_file = Path(input[0]).parent / "experiment_params.json"
     # ep = None
@@ -414,10 +418,10 @@ def nxmx(
             f"{ERR}Error: No collection_info.json file alongside h5, so you must pass energy{NC}"
         )
 
-    assert len(input) == 1, "Only work with pre-built virtual table"
+    # assert len(input) == 1, "Only work with pre-built virtual table"
 
     if output is None:
-        output = Path(input[0].stem + ".nxs")
+        output = common_output_filename(input, suffix=".nxs")
 
     virtual_data = h5py.File(input[0], "r")
 
@@ -449,7 +453,7 @@ def nxmx(
     # max_pixels = 5760
     # size_s, size_f = source.run["header/detector_0_number_of_pixel"]
     # size_s, size_f = 1062, 1028
-    size_s, size_f = virtual_data["data"].shape[1:]
+    size_s, size_f = (3262, 3108)
     detector_distance = pint.Quantity(207.456, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
@@ -554,7 +558,7 @@ def nxmx(
     ).to("angstrom")
     root.entry.instrument.beam = NXbeam(incident_wavelength=wavelength.to("angstrom"))
     output = input[0].parent / output.name
-    print(f"Writing to {BOLD}{output}{NC}")
+
     with h5py.File(output, "w") as nxs:
         root.apply_to_node(nxs)
         # data = nxs["entry"].create_group("data")
@@ -565,9 +569,18 @@ def nxmx(
         #     print(f"Warning: {output.resolve().parent} != {input[0].resolve().parent}")
         #     return
 
-        nxs["entry/data/data_000001"] = h5py.ExternalLink(input[0], "/data")
+        if len(input) == 1:
+            # Assume we are reading from a preexisting VDS
+            print(f"Linking data to assumed complete single file ({input[0]}/data)")
+            nxs["entry/data/data_000001"] = h5py.ExternalLink(input[0], "/data")
+        else:
+            # Create a VDS from this
+            print(f"Constructing VDS from {len(input)} data files")
+            create_vds_dataset(nxs["entry/data"], "data_000001", input)
+
     # h5py.VirtualLayout()
 
+    print(f"Written nexus file {'./' if str(output.parent) == '.' else ''}{output}")
     # TODO:
     # Verify detector sensor material and thickness
     # Beam incident_polarization_stokes
