@@ -512,7 +512,7 @@ def nxmx(
                             "deg",
                         ),
                         transformation_type="rotation",
-                        vector=(0, -1, 0),
+                        vector=(0, 1, 0),
                         depends_on=".",
                     )
                 }
