@@ -81,9 +81,9 @@ if not MORGUL_EXE:
     logger.warning("Could not find morgul: Will not autogenerate VDS")
 
 
-def caget(pv, as_string: bool = True) -> str:
+def caget(pv, as_string: bool = True, extra_args=[]) -> str:
     proc = subprocess.run(
-        [CAGET_EXE, "-tS", pv], capture_output=True, check=True, text=True
+        [CAGET_EXE, *extra_args, "-tS", pv], capture_output=True, check=True, text=True
     )
     return proc.stdout.strip()
 
@@ -93,6 +93,12 @@ def caput(pv, value: str | int | float) -> None:
         [CAPUT_EXE, pv, str(value)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+    )
+
+
+def read_energy_kev() -> float:
+    return 12.39841984055037 / float(
+        caget("BL24I-MO-DCM-01:ENERGY.RBV", extra_args=["-f5"])
     )
 
 
@@ -118,13 +124,18 @@ def get_filename_template(acquisition: int | str) -> str | None:
     path = Path(caget(PV_PATH, as_string=True))
     name = caget(PV_FILENAME, as_string=True)
     if subfolder:
-        # Get a list of subfolders here already, so that we ensure we always number higher
-        candidates = [
-            x for x in path.iterdir() if x.is_dir() and re.match(r"^\d+_", x.name)
-        ]
-        max_acq = max([int(x.name.split("_", maxsplit=1)[0]) for x in candidates])
-        print(f"Max known acq is {max_acq}")
-        folder_number = max(max_acq + 1, acquisition)
+        folder_number = acquisition
+        if path.is_dir():
+            # Get a list of subfolders here already, so that we ensure we always number higher
+            candidates = [
+                x for x in path.iterdir() if x.is_dir() and re.match(r"^\d+_", x.name)
+            ]
+            if candidates:
+                max_acq = max(
+                    [int(x.name.split("_", maxsplit=1)[0]) for x in candidates]
+                )
+                print(f"Max known acq is {max_acq}")
+                folder_number = max(max_acq + 1, acquisition)
         path = path / f"{folder_number:04}_{name}"
     return str(path / (name + "{acquisition}_{stream:02}_{file_index:06}.h5"))
 
@@ -153,6 +164,7 @@ class HDF5Writer:
         self.header = header
         self.stream_index = stream_index
         self.filenames: list[Path] = []
+        self.energy_kev = read_energy_kev()
 
     def _get_filename(self, image_index: int) -> Path:
         return Path(
@@ -180,6 +192,8 @@ class HDF5Writer:
             self.dataset = None
             if self.current_file:
                 self.current_file.close()
+                self.current_file = None
+                self.current_filename = None
             self.current_filename = filename
             self.current_file = self._create_new_datafile(
                 filename, file_index, self.header
@@ -298,9 +312,6 @@ class Writer:
             )
 
         while not self.stop.is_set():
-            if self.first:
-                caput(PV_READY, 1)
-
             self.socket.setsockopt(zmq.RCVTIMEO, 200)
 
             expected_images, num_images, filenames = self.do_acquisition()
@@ -320,6 +331,24 @@ class Writer:
                 cmd = [MORGUL_EXE, "vds", *shared_filenames]
                 print(f"+ {' '.join(str(x) for x in cmd)}")
                 subprocess.run(cmd)
+                # Wait for the collection_info.json to appear
+                time.sleep(5)
+                print("Generating NXS")
+                find_virtual = list(shared_filenames[0].parent.glob("*_virtual*"))
+                if len(find_virtual) != 1:
+                    print(
+                        f"Warning: Found more than one virtual file, not running nxmx: {find_virtual}"
+                    )
+                else:
+                    cmd = [
+                        MORGUL_EXE,
+                        "nxmx",
+                        "--energy",
+                        str(read_energy_kev()),
+                        *find_virtual,
+                    ]
+                    print(f"+ {' '.join(str(x) for x in cmd)}")
+                    subprocess.run(cmd)
                 self.shared_filenames[:] = []
 
     def write_frame(self, hmi: int, data: bytes):
@@ -335,11 +364,31 @@ class Writer:
         """
         # What was the started flag the last time we went round?
         last_started = False
+        l = 0
+        if self.first:
+            with self.current_template[1]:
+                if self.current_template[0].value:
+                    self.current_template[0].value = ""
+            if int(caget(PV_READY)) == 0:
+                caput(PV_READY, 1)
+            # caput(PV_CAPTURED, 0)
+
+        if self.barrier.wait() == 0:
+            print("All writers Ready for new acquisition")
+
         while not stop.is_set():
             try:
                 messages = self.socket.recv_multipart()
                 break
             except zmq.Again:
+                l += 1
+                if self.first and l % 10 == 0:
+                    try:
+                        if int(caget(PV_READY)) == 0:
+                            print("Ready flag got reset, putting back to 1")
+                            caput(PV_READY, 1)
+                    except subprocess.CalledProcessError:
+                        print("Warning: Could not get/set Ready PV")
                 if last_started:
                     print(
                         f"{self.port}: Error - waited extra 200ms to start with group but never got messages"
@@ -364,6 +413,7 @@ class Writer:
             if not self.current_template[0].value:
                 template_path = get_filename_template(header.acquisition)
                 self.current_template[0].value = template_path
+                # template_path.parent.mkdir(parents=True, exist_ok=True)
             else:
                 template_path = self.current_template[0].value
 
@@ -379,6 +429,7 @@ class Writer:
                 flush=True,
             )
             progress = tqdm(total=expected_images, desc="Stream 1")
+            progress.update()
 
         module_hmi = header.detshape[1] * header.column + header.row
         assert module_hmi == header.hmi
@@ -408,7 +459,12 @@ class Writer:
                 stream_index=self.stream_index,
                 expected_frames=expected_images,
             )
-            writer.write_image(header.frameIndex, messages[1])
+            try:
+                writer.write_image(header.frameIndex, messages[1])
+            except RuntimeError as e:
+                print(f"ERROR: Skipping write for this acquisition: {e}")
+                writer.close()
+                writer = None
 
         num_images = 1
         # Wait for the rest of the data;
@@ -445,6 +501,9 @@ class Writer:
         with self.current_template[1]:
             if self.current_template[0].value:
                 self.current_template[0].value = ""
+        # Ensure that every thread has finished before reporting the final collected image
+        self.barrier.wait()
+
         if self.first:
             caput(PV_CAPTURED, num_images)
             progress.close()
