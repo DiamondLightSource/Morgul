@@ -178,9 +178,9 @@ def psi_gain_maps(detector: Detector) -> dict[str, numpy.typing.NDArray[numpy.fl
     calib = get_calibration_path()
     logger.info(f"Reading gain maps from: {B}{calib}{NC}")
     result = {}
-    modules = [x for x in config.keys() if x.startswith(detector)]
+    modules = [x.strip('"') for x in config.keys() if x.startswith(detector)]
     for k in modules:
-        module = config[k]["module"]
+        module = config[k]["module"].strip('"')
         gain_file = list(calib.joinpath(f"{module}_fullspeed").glob("*.bin"))
         assert len(gain_file) == 1
         shape = 3, 512, 1024

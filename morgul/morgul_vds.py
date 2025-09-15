@@ -190,6 +190,6 @@ def vds(
                     ]
 
         #         out.create_virtual_dataset("data", layout)
-        out.create_virtual_dataset("data", layout)
+        out.create_virtual_dataset("data", layout, fillvalue=0x8000)
 
     print(f"Written output to {output_print}")

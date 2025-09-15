@@ -388,8 +388,8 @@ class JF1MD:
 
 def nxmx(
     input: Annotated[list[Path], typer.Argument()],
-    rotation_angle: Annotated[float, typer.Option("--rotation")],
-    output: Annotated[Path, typer.Option("-o", "--output")] = Path("output.h5"),
+    rotation_angle: Annotated[float | None, typer.Option("--rotation")] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output")] = None,
     energy: Annotated[
         float | None, typer.Option("-e", "--energy", help="Energy of the beam, in keV")
     ] = None,
@@ -398,35 +398,44 @@ def nxmx(
 
     print(f"Reading {BOLD}{input}{NC}")
 
-    ep_file = Path(input[0]).parent / "experiment_params.json"
-    ep = None
-    if ep_file.exists():
-        ep = json.loads(ep_file.read_bytes())
-        rotation_angle = ep["image_width_deg"]
+    # ep_file = Path(input[0]).parent / "experiment_params.json"
+    # ep = None
+    # if ep_file.exists():
+    #     ep = json.loads(ep_file.read_bytes())
+    #     rotation_angle = ep["image_width_deg"]
 
     cp_file = Path(input[0]).parent / "collection_info.json"
     if cp_file.exists():
         cp = json.loads(cp_file.read_bytes())
-        energy = 12.39841984055037 / cp["wavelength"]
+        energy = cp["energy_kev"]
+        rotation_angle = cp["angular_increment_deg"]
     elif energy is None:
         sys.exit(
             f"{ERR}Error: No collection_info.json file alongside h5, so you must pass energy{NC}"
         )
 
-    source = JF1MD(input)
+    assert len(input) == 1, "Only work with pre-built virtual table"
+
+    if output is None:
+        output = Path(input[0].stem + ".nxs")
+
+    virtual_data = h5py.File(input[0], "r")
+
+    # source = JF1MD(input)
     # if args.input.resolve().parent == args.output.resolve().parent:
     #     print("Output to same folder as input; doing relative links")
     #     source.filename = Path(args.input.name)
 
     # NXmx requires an estimated end time
-    start_time = datetime.datetime.fromtimestamp(source["timestamp"][()]).replace(
-        tzinfo=tz.UTC
-    )
+    # start_time = datetime.datetime.fromtimestamp(source["timestamp"][()]).replace(
+    #     tzinfo=tz.UTC
+    # )
+    start_time = datetime.datetime.now().replace(tzinfo=tz.UTC)
+    exptime = 1e-3
 
-    num_images = max(*[x.shape[0] for x in source.get_all("data")])
-    end_time_estimated = start_time + datetime.timedelta(
-        seconds=num_images * source["exptime"]
-    )
+    # num_images = max(*[x.shape[0] for x in source.get_all("data")])
+    num_images = virtual_data["data"].shape[0]
+    end_time_estimated = start_time + datetime.timedelta(seconds=num_images * exptime)
     # pal_frequency = pint.Quantity(rate, "Hz")
 
     # Generate the tz_offset NXmx wants. The spec asks for: "ISO 8601
@@ -439,16 +448,17 @@ def nxmx(
     # detector_size = pint.Quantity(0.07995, "m")
     # max_pixels = 5760
     # size_s, size_f = source.run["header/detector_0_number_of_pixel"]
-    size_s, size_f = 1062, 1028
-    detector_distance = pint.Quantity(64.3, "mm")
+    # size_s, size_f = 1062, 1028
+    size_s, size_f = virtual_data["data"].shape[1:]
+    detector_distance = pint.Quantity(207.456, "mm")
     pixel_size = pint.Quantity(75, "microns")
 
-    beam_center_sf_px = (550.49, 529.77)
+    beam_center_sf_px = (1771.97, 1689.09)
     beam_center_sf_mm = tuple((x * pixel_size).to("m") for x in beam_center_sf_px)
 
     detector = NXdetector(
-        description="Jungfrau 1M ",
-        local_name="JF1MD",
+        description="Jungfrau 9M",
+        local_name="JF9MB",
         depends_on="/entry/instrument/transformations/det_z",
         type="CCD",
         x_pixel_size=pixel_size,
@@ -543,13 +553,19 @@ def nxmx(
         (ureg.speed_of_light * ureg.planck_constant) / ureg.Quantity(energy, "keV")
     ).to("angstrom")
     root.entry.instrument.beam = NXbeam(incident_wavelength=wavelength.to("angstrom"))
-
+    output = input[0].parent / output.name
     print(f"Writing to {BOLD}{output}{NC}")
-    nxs = h5py.File(output, "w")
-    root.apply_to_node(nxs)
-    # data = nxs["entry"].create_group("data")
-    # data.attrs["NX_class"] = "NXData"
-    source.make_vfs(nxs["entry"]["data"])
+    with h5py.File(output, "w") as nxs:
+        root.apply_to_node(nxs)
+        # data = nxs["entry"].create_group("data")
+        # data.attrs["NX_class"] = "NXData"
+        # source.make_vfs(nxs["entry"]["data"])
+
+        # if output.resolve().parent == input[0].resolve().parent:
+        #     print(f"Warning: {output.resolve().parent} != {input[0].resolve().parent}")
+        #     return
+
+        nxs["entry/data/data_000001"] = h5py.ExternalLink(input[0], "/data")
     # h5py.VirtualLayout()
 
     # TODO:

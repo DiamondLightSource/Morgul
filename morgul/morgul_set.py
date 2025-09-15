@@ -15,6 +15,7 @@ class PV(str, Enum):
     Frames = "frames"
     Captured = "captured"
     Subfolder = "subfolder"
+    Ready = "ready"
 
 
 PV_NAME = {
@@ -23,6 +24,7 @@ PV_NAME = {
     PV.Frames: "BL24I-JUNGFRAU-META:FD:NumCapture",
     PV.Captured: "BL24I-JUNGFRAU-META:FD:NumCaptured",
     PV.Subfolder: "BL24I-JUNGFRAU-META:FD:Subfolder",
+    PV.Ready: "BL24I-JUNGFRAU-META:FD:Ready",
 }
 
 CA_FLAGS = {PV.Path: ["-S"]}
