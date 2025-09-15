@@ -128,7 +128,7 @@ struct DLSHeaderAdditions {
         }
         if (raw.find("wavelength") != raw.end()) {
             auto value = raw.at("wavelength");
-            double wavelength_angstrom = std::strtod(value.c_str(), nullptr) * 10;
+            double wavelength_angstrom = std::strtod(value.c_str(), nullptr);
             double energy_kev = 12.39841984055037 / wavelength_angstrom;
             out.energy = energy_kev;
         }
@@ -439,6 +439,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
                   _port,
                   hmi,
                   known_hmi);
+            return false;
             std::exit(1);
         }
     }
