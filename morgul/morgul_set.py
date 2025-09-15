@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import sys
@@ -18,13 +19,15 @@ class PV(str, Enum):
     Ready = "ready"
 
 
+PREFIX = os.getenv("FAUXDIN_PREFIX", "BL24I-JUNGFRAU-META:FD:")
+
 PV_NAME = {
-    PV.Path: "BL24I-JUNGFRAU-META:FD:FilePath",
-    PV.Name: "BL24I-JUNGFRAU-META:FD:FileName",
-    PV.Frames: "BL24I-JUNGFRAU-META:FD:NumCapture",
-    PV.Captured: "BL24I-JUNGFRAU-META:FD:NumCaptured",
-    PV.Subfolder: "BL24I-JUNGFRAU-META:FD:Subfolder",
-    PV.Ready: "BL24I-JUNGFRAU-META:FD:Ready",
+    PV.Path: "FilePath",
+    PV.Name: "FileName",
+    PV.Frames: "NumCapture",
+    PV.Captured: "NumCaptured",
+    PV.Subfolder: "Subfolder",
+    PV.Ready: "Ready",
 }
 
 CA_FLAGS = {PV.Path: ["-S"]}
@@ -34,7 +37,7 @@ def get(pv: PV | None = None):
     if not CAGET:
         sys.exit("Error: Could not find caget on PATH")
     pvs = [pv] if pv else list(PV)
-    cmd = [CAGET, "-tS", *[PV_NAME[x] for x in pvs]]
+    cmd = [CAGET, "-tS", *[PREFIX + PV_NAME[x] for x in pvs]]
     out = subprocess.run(cmd, capture_output=True, text=True, check=True)
     for pv, ret in zip(pvs, out.stdout.splitlines()):
         print(f"{pv.title():10} {ret}")
@@ -44,6 +47,6 @@ def set(pv: PV, value: str):
     """Set a Morgul-Jungfrau parameter"""
     if not CAPUT:
         sys.exit("Error: Could not find caput on PATH")
-    cmd = [CAPUT, *CA_FLAGS.get(pv, []), PV_NAME[pv], value]
+    cmd = [CAPUT, *CA_FLAGS.get(pv, []), PREFIX + PV_NAME[pv], value]
     subprocess.run(cmd, check=True, capture_output=True)
     get(pv)
