@@ -172,7 +172,16 @@ class SLSHeader {
 
 class PedestalsLibrary {
     auto load_pedestal_cache(std::filesystem::path path) -> bool {
-        auto pd = PedestalData(path, _detector);
+        std::optional<PedestalData> pd_;
+        try {
+            pd_ = PedestalData(path, _detector);
+        } catch (std::runtime_error err) {
+            print(style::warning,
+                  "Warning: Could not load pedestal data file {}\n",
+                  path);
+            return false;
+        }
+        auto pd = std::move(pd_).value();
         auto [dx, dy] = DETECTOR_SIZE.at(_detector);
         uint64_t exposure_ns = llrint(pd.exposure_time() * 1e9);
         for (size_t m = 0; m < dx * dy * 2; ++m) {
