@@ -176,9 +176,12 @@ PedestalData::PedestalData(std::filesystem::path path, Detector detector)
             for (auto gain_mode : GAIN_MODES) {
                 auto dataset_name =
                     fmt::format("hmi_{:02d}/pedestal_{}", hmi, gain_mode);
-
-                _modules[hmi][gain_mode] =
-                    read_2d_dataset<pedestal_t>(file, dataset_name).value();
+                auto ds = read_2d_dataset<pedestal_t>(file, dataset_name);
+                if (!ds) {
+                    throw std::runtime_error("Opened pedestal file but could not read: "
+                                             + ds.error());
+                }
+                _modules[hmi][gain_mode] = std::move(ds).value();
             }
         }
     }

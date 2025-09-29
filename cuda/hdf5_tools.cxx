@@ -57,6 +57,8 @@ template <typename T>
 zeus::expected<Array2D<T>, std::string> _read_2d_dataset(
     hid_t root_group,
     std::string_view path_to_dataset) {
+    auto _silence = H5ErrorSilencer();
+
     auto dataset =
         H5Cleanup<H5Dclose>(H5Dopen(root_group, path_to_dataset.data(), H5P_DEFAULT));
     if (dataset == H5I_INVALID_HID) {

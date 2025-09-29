@@ -155,3 +155,21 @@ auto read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
 template <>
 auto read_2d_dataset(hid_t root_group, std::string_view path_to_dataset)
     -> zeus::expected<Array2D<double>, std::string>;
+
+/// @brief Turn off HDF5 automatic error stack printing for scope duration
+class H5ErrorSilencer {
+  public:
+    H5ErrorSilencer() {
+        H5Eget_auto2(H5E_DEFAULT, &old_func, &old_client_data);
+        H5Eset_auto2(H5E_DEFAULT, NULL, NULL);
+    }
+    ~H5ErrorSilencer() {
+        H5Eset_auto2(H5E_DEFAULT, old_func, old_client_data);
+    }
+    H5ErrorSilencer(const H5ErrorSilencer &) = delete;
+    H5ErrorSilencer &operator=(const H5ErrorSilencer &) = delete;
+
+  private:
+    H5E_auto2_t old_func;
+    void *old_client_data;
+};
