@@ -1,5 +1,8 @@
 
+#include <fmt/os.h>
+#include <fmt/ostream.h>
 #include <fmt/ranges.h>
+#include <fmt/std.h>
 #include <pthread.h>
 #include <sls/Receiver.h>
 
@@ -59,6 +62,43 @@ auto getenv_or(std::string name, std::optional<std::string> _default = std::null
         return _default;
     }
     return {data};
+}
+
+auto rfc3339_now() -> std::string {
+    using namespace std::chrono;
+    auto now = system_clock::now();
+    auto time_t_now = system_clock::to_time_t(now);
+    auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::tm tm_now;
+    localtime_r(&time_t_now, &tm_now);
+
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm_now);
+    return fmt::format("{}.{:03d}{}",
+                       buf,
+                       static_cast<int>(ms.count()),
+                       tm_now.tm_gmtoff == 0
+                           ? "Z"
+                           : fmt::format("{:+03d}:{:02d}",
+                                         tm_now.tm_gmtoff / 3600,
+                                         std::abs((tm_now.tm_gmtoff % 3600) / 60)));
+}
+
+auto get_thread_name() -> std::string {
+    char name[16];
+    pthread_getname_np(pthread_self(), name, 16);
+    return std::string(name);
+}
+
+auto thread_id_str() -> std::string {
+    std::ostringstream oss;
+    oss << std::this_thread::get_id();
+    return oss.str();
+}
+
+auto log_prefix() -> std::string {
+    return format("{} {:16}::{}", rfc3339_now(), get_thread_name(), thread_id_str());
 }
 
 /// Print a spinner animation, then return the number of characters printed
@@ -686,6 +726,7 @@ struct AcqContext {
     std::array<float, 2> cumulative_time;
     /// Are we skipping this acquisition e.g. we found something wrong?
     bool skip_acquisition;
+    std::array<fmt::ostream, 2> logs;
 };
 
 // ━  ┃  ┏ ┳ ┓ ┏ ┯ ┓ ┏ ┳ ┓ ┏ ┯ ┓
@@ -751,6 +792,14 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
         total_processing_time = 0.0;
         cudaProfilerStart();
     }
+    ctx.logs[0].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}\n",
+                      log_prefix(),
+                      header.fileIndex,
+                      header.udpPort[0]);
+    ctx.logs[1].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}\n",
+                      log_prefix(),
+                      header.fileIndex,
+                      header.udpPort[1]);
     return 0;
 }
 
@@ -816,6 +865,26 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     // Find the handler for this UDP port
     auto port_instance = callbackHeader.udpPort == ctx.udp_ports[0] ? 0 : 1;
     auto &handler = *ctx.handlers[port_instance];
+
+    ctx.logs[port_instance].print(
+        "{}: got port {} data of hmi {} (c{},r{})\n",
+        log_prefix(),
+        callbackHeader.udpPort,
+        sls_header.column * sls_header.detshape[1] + sls_header.row,
+        sls_header.column,
+        sls_header.row);
+    ctx.logs[port_instance].flush();
+
+    // ctx.logs[0].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}",
+    //                   log_prefix(),
+    //                   header.fileIndex,
+    //                   header.udpPort[0]);
+    // ctx.logs[1].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}",
+    //                   log_prefix(),
+    //                   header.fileIndex,
+    //                   ,
+    //                   header.udpPort[1]);
+
     // print(
     //     "┏━━ Got Frame on receiver TCP port {} (tid:{})\n"
     //     "┃ UDP Ports:         {}\n"
@@ -829,6 +898,7 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     //     header.detHeader.column,
     //     sls_header.row,
     //     sls_header.column);
+
     if (!handler.validate_header(sls_header)) {
         print("{}: Invalid header\n", callbackHeader.udpPort);
         return;
@@ -883,11 +953,19 @@ auto start_receiver(std::stop_token stop,
     DataStreamHandler handler(args, port, stream, gains, pedestals, send_a);
     DataStreamHandler handler2(args, port, stream2, gains, pedestals, send_b);
 
+    // Open the output files for logging
+    fmt::ostream file_a =
+        fmt::output_file(format("/dev/shm/morgul_port{}_a.log", port));
+    fmt::ostream file_b =
+        fmt::output_file(format("/dev/shm/morgul_port{}_b.log", port));
+    file_a.print("{}: Constructing for handler {}\n", log_prefix(), (void *)&handler);
+    file_b.print("{}: Constructing for handler {}\n", log_prefix(), (void *)&handler2);
     AcqContext context{.handlers = {&handler, &handler2},
                        .is_first_receiver = (port == args.rx_port),
                        .pedestals = pedestals,
                        .port = port,
-                       .skip_acquisition = false};
+                       .skip_acquisition = false,
+                       .logs = {std::move(file_a), std::move(file_b)}};
 
     r.registerCallBackStartAcquisition(StartAcq, &context);
     r.registerCallBackAcquisitionFinished(EndAcq, &context);
