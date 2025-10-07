@@ -866,6 +866,10 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     auto port_instance = callbackHeader.udpPort == ctx.udp_ports[0] ? 0 : 1;
     auto &handler = *ctx.handlers[port_instance];
 
+    // Handle skipping this acquisition, if an unrecoverable error occured
+    if (ctx.skip_acquisition) {
+        return;
+    }
     ctx.logs[port_instance].print(
         "{}: got port {} data of hmi {} (c{},r{})\n",
         log_prefix(),
@@ -900,7 +904,9 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     //     sls_header.column);
 
     if (!handler.validate_header(sls_header)) {
-        print("{}: Invalid header\n", callbackHeader.udpPort);
+        print("{}: Invalid header, skipping rest of acquisition\n",
+              callbackHeader.udpPort);
+        ctx.skip_acquisition = true;
         return;
     }
     std::span<uint16_t> data = {reinterpret_cast<uint16_t *>(dataPointer),
