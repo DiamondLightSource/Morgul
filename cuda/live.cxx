@@ -806,10 +806,6 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
 // /** Acquisition Finished Call back */
 void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer) {
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
-    if (ctx.skip_acquisition) {
-        // We had some error earlier that means we don't trust this acquisition
-        return;
-    }
     std::sort(ctx.frame_times_a.begin(), ctx.frame_times_a.end());
     std::sort(ctx.frame_times_b.begin(), ctx.frame_times_b.end());
     print(
