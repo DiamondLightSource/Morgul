@@ -54,6 +54,17 @@ std::atomic_int acquisition_number{0};
 std::atomic<float> acq_progress{0};
 std::atomic<float> total_processing_time;
 
+/// Fetch and update an atomic float with the maximum of two values
+inline float atomic_fetch_max(std::atomic<float> &obj, float arg) noexcept {
+    float old = obj.load(std::memory_order_relaxed);
+    while (old < arg
+           && !obj.compare_exchange_weak(
+               old, arg, std::memory_order_release, std::memory_order_relaxed)) {
+        // old is updated by compare_exchange_weak automatically
+    }
+    return old;
+}
+
 /// Get an environment variable if present, with optional default
 auto getenv_or(std::string name, std::optional<std::string> _default = std::nullopt)
     -> std::optional<std::string> {
@@ -839,9 +850,7 @@ void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer
 
     if (ctx.is_first_receiver) {
         print("Acquisition {} complete in {:.2f}S\n", acquisition_number, 0.0f);
-        //   time_acq.value().get_elapsed_seconds());
         ++acquisition_number;
-        // acq_progress = 0;
         if (was_pedestals) {
             ctx.pedestals.save_pedestals();
         }
@@ -909,10 +918,8 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     std::span<uint16_t> data = {reinterpret_cast<uint16_t *>(dataPointer),
                                 imageSize / 2};
     handler.process_frame(sls_header, data);
+    atomic_fetch_max(acq_progress, sls_header.progress);
 
-    if (ctx.is_first_receiver && callbackHeader.udpPort == ctx.udp_ports[0]) {
-        acq_progress = sls_header.progress;
-    }
     if (port_instance == 0) {
         ctx.frame_times_a.push_back(process_timer.get_elapsed_seconds() * 1000);
     } else {
