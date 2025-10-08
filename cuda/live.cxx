@@ -483,11 +483,12 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         if (known_hmi != hmi) {
             print(style::error,
                   "{}: Fatal Error: Got fed mix of module index; hmi={} instead of "
-                  "initial {} are your routing "
+                  "initial {} on frame {} are your routing "
                   "crossed?",
                   _port,
                   hmi,
-                  known_hmi);
+                  known_hmi,
+                  header.frameIndex);
             return false;
             std::exit(1);
         }
