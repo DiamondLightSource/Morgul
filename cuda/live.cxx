@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <sls/Receiver.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <barrier>
@@ -47,11 +48,14 @@ std::stop_source global_stop;
 
 /// Count how many threads are waiting, so we know if everything is idle
 std::atomic_int threads_waiting{0};
+/// How many threads are currently processing data
+std::atomic_int threads_receiving{0};
 std::atomic_bool in_acquisition{false};
 /// Used to identify the first validation each acquisition, to avoid spamming
 std::atomic_bool is_first_validation_this_acquisition{false};
 std::atomic_int acquisition_number{0};
 std::atomic<float> acq_progress{0};
+std::vector<float> per_rec_progress{};
 std::atomic<float> total_processing_time;
 
 /// Fetch and update an atomic float with the maximum of two values
@@ -739,6 +743,7 @@ struct AcqContext {
     /// Are we skipping this acquisition e.g. we found something wrong?
     bool skip_acquisition;
     std::array<fmt::ostream, 2> logs;
+    uint16_t receiver_index;
 };
 
 // ━  ┃  ┏ ┳ ┓ ┏ ┯ ┓ ┏ ┳ ┓ ┏ ┯ ┓
@@ -865,6 +870,7 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
              size_t &imageSize,
              void *objectPointer) {
     auto process_timer = Timer();
+    threads_receiving += 1;
     // NOTE: THIS FUNCTION IS CALLED FROM A THREAD PER STREAM
     auto &ctx = *reinterpret_cast<AcqContext *>(objectPointer);
     auto sls_header = header_from_framedata(header, callbackHeader, ctx);
@@ -874,6 +880,7 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
 
     // Handle skipping this acquisition, if an unrecoverable error occured
     if (ctx.skip_acquisition) {
+        threads_receiving -= 1;
         return;
     }
     ctx.logs[port_instance].print(
@@ -909,23 +916,27 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     //     sls_header.row,
     //     sls_header.column);
 
+    // auto &progress = ;
+
     if (!handler.validate_header(sls_header)) {
         print("{}: Invalid header, skipping rest of acquisition\n",
               callbackHeader.udpPort);
         ctx.skip_acquisition = true;
+        threads_receiving -= 1;
         return;
     }
     std::span<uint16_t> data = {reinterpret_cast<uint16_t *>(dataPointer),
                                 imageSize / 2};
     handler.process_frame(sls_header, data);
     atomic_fetch_max(acq_progress, sls_header.progress);
-
+    per_rec_progress[ctx.receiver_index + port_instance] = sls_header.progress;
     if (port_instance == 0) {
         ctx.frame_times_a.push_back(process_timer.get_elapsed_seconds() * 1000);
     } else {
         ctx.frame_times_b.push_back(process_timer.get_elapsed_seconds() * 1000);
     }
     ctx.cumulative_time[port_instance] += process_timer.get_elapsed_seconds();
+    threads_receiving -= 1;
 }
 
 auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
@@ -975,7 +986,8 @@ auto start_receiver(std::stop_token stop,
                        .pedestals = pedestals,
                        .port = port,
                        .skip_acquisition = false,
-                       .logs = {std::move(file_a), std::move(file_b)}};
+                       .logs = {std::move(file_a), std::move(file_b)},
+                       .receiver_index = port - args.rx_port};
 
     r.registerCallBackStartAcquisition(StartAcq, &context);
     r.registerCallBackAcquisitionFinished(EndAcq, &context);
@@ -1022,6 +1034,7 @@ auto do_live(Arguments &args) -> void {
         std::vector<std::jthread> threads;
         for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
              ++port) {
+            per_rec_progress.push_back(0);
             threads.emplace_back(start_receiver,
                                  global_stop.get_token(),
                                  std::ref(barrier),
@@ -1038,10 +1051,18 @@ auto do_live(Arguments &args) -> void {
                 if (threads_waiting == args.rx_listeners && !in_acquisition) {
                     spinner("All listeners waiting");
                 } else {
-                    auto msg =
-                        fmt::format("  Progress {:3}: {:3.2f} %                  \r",
-                                    acquisition_number,
-                                    acq_progress);
+                    float min = *std::min_element(per_rec_progress.begin(),
+                                                  per_rec_progress.end());
+                    float max = *std::max_element(per_rec_progress.begin(),
+                                                  per_rec_progress.end());
+                    auto msg = fmt::format(
+                        "  Progress acq {:3}: {:3.2f}-{:3.2f} % ({} active))           "
+                        "      "
+                        "\r",
+                        acquisition_number,
+                        min,
+                        max,
+                        threads_receiving);
                     std::cout << msg << std::flush;
                 }
             }
