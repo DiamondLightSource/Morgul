@@ -394,7 +394,7 @@ class PedestalsLibrary {
 struct FrameData {
     slsDetectorDefs::sls_detector_header header;
     std::optional<slsDetectorDefs::dataCallbackHeader> callbackHeader;
-    std::vector<uint8_t> data;
+    std::vector<std::byte> data;
     std::optional<std::tuple<size_t, size_t>> is_pedestals;
 };
 
@@ -481,6 +481,7 @@ class DataStreamHandler {
         return _frames;
     }
     auto validate_header(const SLSHeader &header) -> bool;
+    auto start_acquisition() -> void;
     auto process_frame(const SLSHeader &header, std::span<uint16_t> &frame) -> void;
     auto end_acquisition() -> void;
 
@@ -531,17 +532,37 @@ auto DataStreamHandler::pass_frame_into_handler(
     const slsDetectorDefs::sls_detector_header &header,
     const std::optional<slsDetectorDefs::dataCallbackHeader> callbackHeader,
     std::span<std::byte> data) -> bool {
-    print("{}: Got image {}\n", _port, header.frameNumber);
+    std::vector<std::byte> frame;
+    frame.reserve(data.size());
+    std::copy(data.begin(), data.end(), frame.begin());
+    print("{}: Got image receiver-thread-side {}\n", _port, header.frameNumber);
+    _frames->enqueue(FrameData{
+        .header = header,
+        .callbackHeader = callbackHeader,
+        .data = std::move(frame),
+        .is_pedestals = std::nullopt,
+    });
     return true;
 }
 
 auto DataStreamHandler::listen(std::stop_token stop) -> void {
     FrameData data;
     while (!stop.stop_requested()) {
+        // Wait for first frame of acquisition
         if (!_frames->wait_dequeue_timed(data, 10ms)) {
             continue;
         }
-        print("{}: Got data for frame {}\n", _port, data.header.frameNumber);
+        _feedback->enqueue(acqstate::Starting{});
+        // Do the whole acquisition
+        while (true) {
+            if (!_frames->wait_dequeue_timed(data, 200ms)) {
+                // Assume this means ended
+                break;
+            }
+            _feedback->enqueue(acqstate::ImageReceived{});
+        }
+        // print("{}: End of acquisition via timeout\n", _port);
+        _feedback->enqueue(acqstate::Ended{});
     }
 }
 #pragma region Validate Header
@@ -993,6 +1014,7 @@ auto do_live(Arguments &args) -> void {
                     if (std::holds_alternative<acqstate::Starting>(state)) {
                         auto msg = std::get<acqstate::Starting>(state);
                         currently_active += 1;
+                        print("Started receiver\n");
 
                     } else if (std::holds_alternative<acqstate::ImageReceived>(state)) {
                         auto msg = std::get<acqstate::ImageReceived>(state);
@@ -1001,6 +1023,10 @@ auto do_live(Arguments &args) -> void {
                         auto msg = std::get<acqstate::Ended>(state);
                         num_images_seen = 0;
                         currently_active -= 1;
+                        print("Ended receiver\n");
+                        if (currently_active == 0) {
+                            print("All receivers ender\n");
+                        }
                     }
                 }
                 // Have we had enough time elapse for an update?
