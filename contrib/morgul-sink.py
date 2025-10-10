@@ -81,10 +81,24 @@ if not MORGUL_EXE:
     logger.warning("Could not find morgul: Will not autogenerate VDS")
 
 
-def caget(pv, as_string: bool = True, extra_args=[]) -> str:
-    proc = subprocess.run(
-        [CAGET_EXE, *extra_args, "-tS", pv], capture_output=True, check=True, text=True
-    )
+def caget(pv, as_string: bool = True, extra_args=[], retry_count: int = 4) -> str:
+    wait = 0.05
+    retries = 0
+    while True:
+        try:
+            proc = subprocess.run(
+                [CAGET_EXE, *extra_args, "-tS", pv],
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+            break
+        except subprocess.CalledProcessError:
+            if retries >= retry_count:
+                raise
+            time.sleep(wait)
+            wait *= 2
+            retries += 1
     return proc.stdout.strip()
 
 
@@ -339,23 +353,27 @@ class Writer:
                     else:
                         time.sleep(0.5)
                 else:
-                    print("Warning: Waited but no collection_info.json appeared")
-                print("Generating NXS")
-                # find_virtual = list(shared_filenames[0].parent.glob("*_virtual*"))
-                # if len(find_virtual) != 1:
-                #     print(
-                #         f"Warning: Found more than one virtual file, not running nxmx: {find_virtual}"
-                #     )
-                # else:
-                cmd = [
-                    MORGUL_EXE,
-                    "nxmx",
-                    "--energy",
-                    str(read_energy_kev()),
-                    *shared_filenames,
-                ]
-                print(f"+ {' '.join(str(x) for x in cmd)}")
-                subprocess.run(cmd)
+                    print(
+                        "Warning: Waited but no collection_info.json appeared, not generating NXS"
+                    )
+
+                if collection_info.is_file():
+                    print("Generating NXS")
+                    # find_virtual = list(shared_filenames[0].parent.glob("*_virtual*"))
+                    # if len(find_virtual) != 1:
+                    #     print(
+                    #         f"Warning: Found more than one virtual file, not running nxmx: {find_virtual}"
+                    #     )
+                    # else:
+                    cmd = [
+                        MORGUL_EXE,
+                        "nxmx",
+                        "--energy",
+                        str(read_energy_kev()),
+                        *shared_filenames,
+                    ]
+                    print(f"+ {' '.join(str(x) for x in cmd)}")
+                    subprocess.run(cmd)
                 self.shared_filenames[:] = []
 
     def write_frame(self, hmi: int, data: bytes):
