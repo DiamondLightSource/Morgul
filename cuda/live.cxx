@@ -746,7 +746,7 @@ struct AcqContext {
     std::array<float, 2> cumulative_time;
     /// Are we skipping this acquisition e.g. we found something wrong?
     bool skip_acquisition;
-    std::array<fmt::ostream, 2> logs;
+    // std::array<fmt::ostream, 2> logs;
     uint16_t receiver_index;
 };
 
@@ -813,14 +813,14 @@ int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPoin
         total_processing_time = 0.0;
         cudaProfilerStart();
     }
-    ctx.logs[0].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}\n",
-                      log_prefix(),
-                      header.fileIndex,
-                      header.udpPort[0]);
-    ctx.logs[1].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}\n",
-                      log_prefix(),
-                      header.fileIndex,
-                      header.udpPort[1]);
+    // ctx.logs[0].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}\n",
+    //                   log_prefix(),
+    //                   header.fileIndex,
+    //                   header.udpPort[0]);
+    // [1].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}\n",
+    //                   log_prefix(),
+    //                   header.fileIndex,
+    //                   header.udpPort[1]);
     return 0;
 }
 
@@ -887,14 +887,14 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
         threads_receiving -= 1;
         return;
     }
-    ctx.logs[port_instance].print(
-        "{}: got port {} data of hmi {} (c{},r{})\n",
-        log_prefix(),
-        callbackHeader.udpPort,
-        sls_header.column * sls_header.detshape[1] + sls_header.row,
-        sls_header.column,
-        sls_header.row);
-    ctx.logs[port_instance].flush();
+    // ctx.logs[port_instance].print(
+    //     "{}: got port {} data of hmi {} (c{},r{})\n",
+    //     log_prefix(),
+    //     callbackHeader.udpPort,
+    //     sls_header.column * sls_header.detshape[1] + sls_header.row,
+    //     sls_header.column,
+    //     sls_header.row);
+    // ctx.logs[port_instance].flush();
 
     // ctx.logs[0].print("{}: Starting acquisition fileIndex {}, assigned UDP port {}",
     //                   log_prefix(),
@@ -979,18 +979,18 @@ auto start_receiver(std::stop_token stop,
     DataStreamHandler handler2(args, port, stream2, gains, pedestals, send_b);
 
     // Open the output files for logging
-    fmt::ostream file_a =
-        fmt::output_file(format("/dev/shm/morgul_port{}_a.log", port));
-    fmt::ostream file_b =
-        fmt::output_file(format("/dev/shm/morgul_port{}_b.log", port));
-    file_a.print("{}: Constructing for handler {}\n", log_prefix(), (void *)&handler);
-    file_b.print("{}: Constructing for handler {}\n", log_prefix(), (void *)&handler2);
+    // fmt::ostream file_a =
+    //     fmt::output_file(format("/dev/shm/morgul_port{}_a.log", port));
+    // fmt::ostream file_b =
+    //     fmt::output_file(format("/dev/shm/morgul_port{}_b.log", port));
+    // file_a.print("{}: Constructing for handler {}\n", log_prefix(), (void *)&handler);
+    // file_b.print("{}: Constructing for handler {}\n", log_prefix(), (void *)&handler2);
     AcqContext context{.handlers = {&handler, &handler2},
                        .is_first_receiver = (port == args.rx_port),
                        .pedestals = pedestals,
                        .port = port,
                        .skip_acquisition = false,
-                       .logs = {std::move(file_a), std::move(file_b)},
+                       //    .logs = {std::move(file_a), std::move(file_b)},
                        .receiver_index = port - args.rx_port};
 
     r.registerCallBackStartAcquisition(StartAcq, &context);
