@@ -30,7 +30,7 @@ PV_NAME = {
     PV.Ready: "Ready",
 }
 
-CA_FLAGS = {PV.Path: ["-S"]}
+CA_FLAGS = {PV.Path: ["-S"], PV.Name: ["-S"]}
 
 
 def get(pv: PV | None = None):

@@ -137,6 +137,8 @@ def get_filename_template(acquisition: int | str) -> str | None:
     subfolder = bool(int(caget(PV_SUBFOLDER, as_string=True)))
     path = Path(caget(PV_PATH, as_string=True))
     name = caget(PV_FILENAME, as_string=True)
+    if not path or not name:
+        return None
     if subfolder:
         folder_number = acquisition
         if path.is_dir():
@@ -321,7 +323,7 @@ class Writer:
         first_out = self.barrier.wait() == 0
         if first_out:
             print(
-                f"{args.num_listeners} listeners waiting for images on ports {port}-{port + args.num_listeners - 1}",
+                f"{args.num_listeners - args.start_index} listeners waiting for images on ports {port + args.start_index}-{port + args.num_listeners - 1 - args.start_index}",
                 flush=True,
             )
 
@@ -550,7 +552,9 @@ print(r""" ███▄ ▄███▓ ▒█████   ██▀███ 
             | |/ |/ / /  / / /_/  __/ /
             |__/|__/_/  /_/\__/\___/_/""")
 
-print(f"Start template file: {get_filename_template(0) or 'None (not in write mode)'}")
+print(
+    f"Start template file: {get_filename_template(0) or 'None (not in write mode or empty path)'}"
+)
 with Manager() as manager:
     stop = manager.Event()
     barrier = manager.Barrier(args.num_listeners)
@@ -587,6 +591,14 @@ with Manager() as manager:
                 job.result()
             except threading.BrokenBarrierError:
                 pass
+            except BaseException as e:
+                # Handle this... which seems to come up trying to terminate
+                if (
+                    "self._draft_poller,self.handle cannot be converted to a Python object for pickling"
+                    in str(e)
+                ):
+                    continue
+                raise
 
 
 print("done")
