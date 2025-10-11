@@ -220,26 +220,83 @@ struct DLSHeaderAdditions {
     }
 };
 
+/// @brief Unified header object, representing possible data from all routes
 class SLSHeader {
   public:
-    // uint32_t bitmode;
-    // std::array<uint32_t, 2> detshape;
-    std::array<uint32_t, 2> shape;
-    size_t acqIndex;
+    // First: Common fields present always (because per-packet header)
+
+    /// Column number of this module in the detecto
+    uint32_t column;
+    /// The number of frames since the detector count was reset - NOT frame index
+    size_t detectorFrameNumber;
+    /// Detector type
+    uint32_t detType;
+    /// The exposure time, in 100 ns
+    uint32_t expLength;
     /// Index of this frame in the current acquisition e.g. 0....N-1
     size_t frameIndex;
-    double progress;
-    /// The number of frames since the detector count was reset - NOT frame index
-    size_t frameNumber;
-    uint32_t expLength;
-    uint32_t packetNumber;
+    /// Detector-provided module ID
+    uint16_t modId;
+    /// Number of packets see in this frame (e.g. are any missed?)
+    uint32_t packetCount;
+    /// Row number of this module in the detecto
     uint32_t row;
-    uint32_t column;
-    uint32_t detType;
+    /// Detector-provided timestamp for the frame, in 100ns increments
+    uint64_t timestamp;
+
+    // Now: Extra fields, that may not be present depending on the source
+
+    /// Image size
+    std::optional<std::array<uint32_t, 2>> shape;
+    /// Progress of current acquisition
+    std::optional<float> progress;
+    /// Any extra custom JSON parameters
     std::map<std::string, std::string> addJsonHeader;
     /// DLS-specific additional headers that may be present in addJsonHeader
+    /// Note that this will be filled by default values if no extra data present
     DLSHeaderAdditions dls;
+    /// The UDP port this packet was received on
     uint16_t udp_port;
+
+    static auto from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader,
+                               const slsDetectorDefs::dataCallbackHeader &dataHeader)
+        -> SLSHeader {
+        SLSHeader out;
+        out.column = recHeader.detHeader.column;
+        out.detectorFrameNumber = recHeader.detHeader.frameNumber;
+        out.detType = recHeader.detHeader.detType;
+        out.expLength = recHeader.detHeader.expLength;
+        out.frameIndex = dataHeader.frameIndex;
+        out.modId = recHeader.detHeader.modId;
+        out.packetCount = recHeader.detHeader.packetNumber;
+        out.row = recHeader.detHeader.row;
+        out.timestamp = recHeader.detHeader.timestamp;
+
+        out.addJsonHeader = dataHeader.addJsonHeader;
+        out.dls = DLSHeaderAdditions::from_map(dataHeader.addJsonHeader);
+        out.progress = dataHeader.progress;
+        out.shape = {static_cast<uint32_t>(dataHeader.shape.x),
+                     static_cast<uint32_t>(dataHeader.shape.y)};
+        out.udp_port = dataHeader.udpPort;
+        return out;
+    }
+    /// @brief Construct a unified header object with only a frame header
+    /// @param header The image header
+    /// @param first_frame_index If known, what the first image index was
+    static auto from_header(const slsDetectorDefs::sls_detector_header &header,
+                            std::optional<size_t> first_frame_index) -> SLSHeader {
+        return SLSHeader{
+            .column = header.column,
+            .detectorFrameNumber = header.frameNumber,
+            .detType = header.detType,
+            .expLength = header.expLength,
+            .frameIndex = header.frameNumber - first_frame_index.value_or(0),
+            .modId = header.modId,
+            .packetCount = header.packetNumber,
+            .row = header.row,
+            .timestamp = header.timestamp,
+        };
+    }
 };
 
 #pragma endregion
@@ -396,9 +453,8 @@ class PedestalsLibrary {
 
 /// @brief The basic unit of communication between threads inside DataStreamHandler
 struct FrameData {
-    slsDetectorDefs::sls_detector_header header;
-    std::optional<slsDetectorDefs::dataCallbackHeader> callbackHeader;
-    std::vector<std::byte> data;
+    SLSHeader header;
+    std::vector<std::uint16_t> data;
     std::optional<std::tuple<size_t, size_t>> is_pedestals;
 };
 
@@ -477,10 +533,8 @@ class DataStreamHandler {
     ///                         run as part of an slsReceiver or raw frame receiver.
     /// @param data             The frame data.
     /// @returns                If the frame was deemed to be valid (pass early checks)
-    auto pass_frame_into_handler(
-        const slsDetectorDefs::sls_detector_header &header,
-        const std::optional<slsDetectorDefs::dataCallbackHeader> callbackHeader,
-        std::span<std::byte> data) -> bool;
+    auto pass_frame_into_handler(SLSHeader header, std::span<std::uint16_t> data)
+        -> bool;
 
     /// @brief Start listening for frame messages sent to the handler by pass_frame_into_handler
     ///
@@ -490,9 +544,11 @@ class DataStreamHandler {
     auto frame_queue() -> std::shared_ptr<BlockingReaderWriterQueue<FrameData>> {
         return _frames;
     }
+
     auto validate_header(const SLSHeader &header) -> bool;
     auto start_acquisition() -> void;
-    auto process_frame(const SLSHeader &header, std::span<uint16_t> &frame) -> void;
+    auto process_frame(const SLSHeader &header, const std::span<uint16_t> &frame)
+        -> void;
     auto end_acquisition() -> void;
 
     double stats_lz4_time = 0;
@@ -541,16 +597,17 @@ class DataStreamHandler {
 ///////////////////////////////////////////////////////////////////////////////////
 // NOTE: THIS FUNCTION RUNS IN A SEPARATE THREADING CONTEXT AND SHOULD NOT BLOCK //
 ///////////////////////////////////////////////////////////////////////////////////
-auto DataStreamHandler::pass_frame_into_handler(
-    const slsDetectorDefs::sls_detector_header &header,
-    const std::optional<slsDetectorDefs::dataCallbackHeader> callbackHeader,
-    std::span<std::byte> data) -> bool {
-    std::vector<std::byte> frame;
+auto DataStreamHandler::pass_frame_into_handler(SLSHeader header,
+                                                std::span<std::uint16_t> data) -> bool {
+    // Do validation on this header before handing it over
+    if (!validate_header(header)) {
+        return false;
+    }
+    std::vector<std::uint16_t> frame;
     frame.reserve(data.size());
     std::copy(data.begin(), data.end(), frame.begin());
     _frames->enqueue(FrameData{
-        .header = header,
-        .callbackHeader = callbackHeader,
+        .header = std::move(header),
         .data = std::move(frame),
         .is_pedestals = std::nullopt,
     });
@@ -568,7 +625,7 @@ auto DataStreamHandler::listen(std::stop_token stop) -> void {
         }
         // We have the first frame! Send a message to say so.
         _feedback->enqueue(acqstate::Starting{});
-        // TODO: Process the first frame
+        process_frame(data.header, data.data);
 
         // Do the rest of the acquisition
         while (true) {
@@ -576,15 +633,12 @@ auto DataStreamHandler::listen(std::stop_token stop) -> void {
                 // Assume this means ended
                 break;
             }
+            // Process this frame...
+            process_frame(data.header, data.data);
             // Send the message saying this frame arrived
-            if (data.callbackHeader.has_value()) {
-                _feedback->enqueue(acqstate::ImageReceived{
-                    .progress = data.callbackHeader.value().progress,
-                    .frameIndex = data.header.frameNumber});
-            } else {
-                _feedback->enqueue(acqstate::ImageReceived{
-                    .progress = std::nullopt, .frameIndex = data.header.frameNumber});
-            }
+            _feedback->enqueue(
+                acqstate::ImageReceived{.progress = data.header.progress,
+                                        .frameIndex = data.header.frameIndex});
         }
         end_acquisition();
         _feedback->enqueue(acqstate::Ended{});
@@ -598,7 +652,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
     bool _expected = true;
 
     // Validate this matches our expectations
-    if (header.shape != std::array{HM_WIDTH, HM_HEIGHT}) {
+    if (header.shape.has_value() && header.shape != std::array{HM_WIDTH, HM_HEIGHT}) {
         print(style::error,
               "{}: Error: Got wrong sized image ({}), expected (1024,256)",
               _port,
@@ -630,7 +684,8 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         }
     }
     if (!header.dls.energy) {
-        print(style::warning, "Warning: Did not get energy in addJsonHeader packet\n");
+        print(style::warning,
+              "Warning: Do not have energy provided via addJsonHeader or otherwise\n");
     }
 
     // Paranoia: Look for pedestal flag changing partway through stream.
@@ -678,8 +733,8 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
 
     ++num_images_seen;
     highest_image_seen = std::max(highest_image_seen, header.frameIndex + 1);
-    if (hm_frameNumber != 0 && header.frameNumber > hm_frameNumber + 1) {
-        auto num_skipped = header.frameNumber - hm_frameNumber - 1;
+    if (hm_frameNumber != 0 && header.frameIndex > hm_frameNumber + 1) {
+        auto num_skipped = header.frameIndex - hm_frameNumber - 1;
         print(style::warning,
               "hm {}: Warning: Skipped {} frames\n",
               known_hmi.value(),
@@ -690,7 +745,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
 
 #pragma region Process Frame
 auto DataStreamHandler::process_frame(const SLSHeader &header,
-                                      std::span<uint16_t> &frame) -> void {
+                                      const std::span<uint16_t> &frame) -> void {
     auto time_frame = Timer();
     auto energy = header.dls.energy.value_or(12.4);
 
@@ -849,26 +904,6 @@ auto DataStreamHandler::end_acquisition() -> void {
 
 #pragma region Receiver Lifecycle
 
-auto header_from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader,
-                           const slsDetectorDefs::dataCallbackHeader &dataHeader)
-    -> SLSHeader {
-    SLSHeader out;
-    out.acqIndex = dataHeader.acqIndex;
-    out.addJsonHeader = dataHeader.addJsonHeader;
-    out.column = recHeader.detHeader.column;
-    out.detType = recHeader.detHeader.detType;
-    out.dls = DLSHeaderAdditions::from_map(dataHeader.addJsonHeader);
-    out.expLength = recHeader.detHeader.expLength;
-    out.frameIndex = dataHeader.frameIndex;
-    out.frameNumber = recHeader.detHeader.frameNumber;
-    out.progress = dataHeader.progress;
-    out.row = recHeader.detHeader.row;
-    out.shape = {static_cast<uint32_t>(dataHeader.shape.x),
-                 static_cast<uint32_t>(dataHeader.shape.y)};
-    out.udp_port = dataHeader.udpPort;
-    return out;
-}
-
 /// @brief Hold contextual information across callbacks from slsReceiver
 struct SLSReceiverContext {
     uint16_t tcp_port;
@@ -881,7 +916,6 @@ struct SLSReceiverContext {
 };
 
 int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPointer) {
-    print("In Start Acquisition Callback");
     auto &ctx = *reinterpret_cast<SLSReceiverContext *>(objectPointer);
     ctx.skip_acquisition = false;
     //     assert(header.udpPort.size() == 2);
@@ -958,11 +992,10 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
 
     auto port_instance = callbackHeader.udpPort == ctx.udp_ports[0] ? 0 : 1;
     auto &handler = *ctx.handlers[port_instance];
-
+    assert(imageSize % sizeof(uint16_t) == 0);
     ctx.skip_acquisition = !handler.pass_frame_into_handler(
-        header.detHeader,
-        {callbackHeader},
-        std::span(reinterpret_cast<std::byte *>(dataPointer), imageSize));
+        SLSHeader::from_framedata(header, callbackHeader),
+        std::span(reinterpret_cast<uint16_t *>(dataPointer), imageSize));
     threads_receiving -= 1;
 }
 
