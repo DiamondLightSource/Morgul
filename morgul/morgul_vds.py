@@ -142,9 +142,9 @@ def create_vds_dataset(parent: h5py.Group, dataset_name: str, data_files: list[P
     # For every module, make a source
     for row, slow_offset in zip(range(rows), slow_offsets):
         for col, fast_offset in zip(range(cols), fast_offsets):
-            if (col, row) not in tiles:
-                print(f"No entry for {(row, col)=}")
-                break
+            if (col, rows - row - 1) not in tiles:
+                print(f"No entry for r{rows - row - 1}, c{col}")
+                continue
             filename = tiles[col, rows - row - 1]
 
             source = h5py.VirtualSource(
