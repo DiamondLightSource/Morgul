@@ -59,7 +59,11 @@ std::atomic_int threads_waiting_proc{0};
 std::atomic_int threads_receiving{0};
 
 std::atomic_bool in_acquisition{false};
+
 std::atomic_int acquisition_number{0};
+/// The number of frames expected in this acquisition
+std::atomic_size_t acquisition_frames{0};
+
 std::atomic<float> acq_progress{0};
 std::vector<float> per_rec_progress{};
 std::atomic<float> total_processing_time;
@@ -164,7 +168,7 @@ auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
     send.set(zmq::sockopt::sndtimeo, 10000);
     auto zmq_bind_spec = fmt::format("tcp://0.0.0.0:{}", port);
     send.bind(zmq_bind_spec);
-    print("Binding sending ZMQ to {}\n", zmq_bind_spec);
+    // print("Binding sending ZMQ to {}\n", zmq_bind_spec);
     return send;
 }
 
@@ -400,7 +404,11 @@ struct FrameData {
 
 namespace acqstate {
 struct Starting {};
-struct ImageReceived {};
+struct ImageReceived {
+    std::optional<float> progress;
+    /// The current frame index within the current acquisition e.g. 0..number_of_images
+    size_t frameIndex;
+};
 struct Ended {};
 
 }  // namespace acqstate
@@ -422,6 +430,7 @@ class DataStreamHandler {
     uint64_t hm_frameNumber = 0;
     uint64_t exposure_ns = 0;
     bool is_pedestal_mode = false;
+
     /// Should we attempt to send packets onward to a writer.
     ///
     /// Turned off for the acquisition on send error to the writer.
@@ -529,6 +538,9 @@ class DataStreamHandler {
     shared_device_ptr<std::byte[]> dev_bitshuffle_buffer_out;
 };
 
+///////////////////////////////////////////////////////////////////////////////////
+// NOTE: THIS FUNCTION RUNS IN A SEPARATE THREADING CONTEXT AND SHOULD NOT BLOCK //
+///////////////////////////////////////////////////////////////////////////////////
 auto DataStreamHandler::pass_frame_into_handler(
     const slsDetectorDefs::sls_detector_header &header,
     const std::optional<slsDetectorDefs::dataCallbackHeader> callbackHeader,
@@ -536,7 +548,6 @@ auto DataStreamHandler::pass_frame_into_handler(
     std::vector<std::byte> frame;
     frame.reserve(data.size());
     std::copy(data.begin(), data.end(), frame.begin());
-    print("{}: Got image receiver-thread-side {}\n", _port, header.frameNumber);
     _frames->enqueue(FrameData{
         .header = header,
         .callbackHeader = callbackHeader,
@@ -545,6 +556,8 @@ auto DataStreamHandler::pass_frame_into_handler(
     });
     return true;
 }
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
 
 auto DataStreamHandler::listen(std::stop_token stop) -> void {
     FrameData data;
@@ -553,19 +566,31 @@ auto DataStreamHandler::listen(std::stop_token stop) -> void {
         if (!_frames->wait_dequeue_timed(data, 10ms)) {
             continue;
         }
+        // We have the first frame! Send a message to say so.
         _feedback->enqueue(acqstate::Starting{});
-        // Do the whole acquisition
+        // TODO: Process the first frame
+
+        // Do the rest of the acquisition
         while (true) {
             if (!_frames->wait_dequeue_timed(data, 200ms)) {
                 // Assume this means ended
                 break;
             }
-            _feedback->enqueue(acqstate::ImageReceived{});
+            // Send the message saying this frame arrived
+            if (data.callbackHeader.has_value()) {
+                _feedback->enqueue(acqstate::ImageReceived{
+                    .progress = data.callbackHeader.value().progress,
+                    .frameIndex = data.header.frameNumber});
+            } else {
+                _feedback->enqueue(acqstate::ImageReceived{
+                    .progress = std::nullopt, .frameIndex = data.header.frameNumber});
+            }
         }
-        // print("{}: End of acquisition via timeout\n", _port);
+        end_acquisition();
         _feedback->enqueue(acqstate::Ended{});
     }
 }
+
 #pragma region Validate Header
 
 auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
@@ -802,9 +827,27 @@ auto DataStreamHandler::end_acquisition() -> void {
     send_onwards = true;
     exposure_ns = 0;
     bad_hmi_acq = std::nullopt;
+    // print(
+    //     "┏━━ End Acquisition on receiver UDP port: {} (tid:{})\n"
+    //     // "┃ UDP Ports:        {}\n"
+    //     "┃ Complete Frames:  {}\n"
+    //     "┗ Last Frame Index: {}\n",
+    //     // " Total processing time/frame: {:.2f} {:.2f} ms\n",
+    //     _port,
+    //     std::this_thread::get_id(),
+    //     // self.completeFrames,
+    //     header.lastFrameIndex);
+    // ctx.cumulative_time[0] * 1000.0 / header.completeFrames[0],
+    // ctx.cumulative_time[1] * 1000.0 / header.completeFrames[1]);
+
+    // total_processing_time += ctx.cumulative_time[0] + ctx.cumulative_time[1];
+
+    // bool was_pedestals = ctx.is_pedestals.has_value();
+
+    // ++threads_waiting_proc;
 }
 
-#pragma region Main Loop
+#pragma region Receiver Lifecycle
 
 auto header_from_framedata(const slsDetectorDefs::sls_receiver_header &recHeader,
                            const slsDetectorDefs::dataCallbackHeader &dataHeader)
@@ -838,60 +881,64 @@ struct SLSReceiverContext {
 };
 
 int StartAcq(const slsDetectorDefs::startCallbackHeader header, void *objectPointer) {
+    print("In Start Acquisition Callback");
     auto &ctx = *reinterpret_cast<SLSReceiverContext *>(objectPointer);
     ctx.skip_acquisition = false;
-    assert(header.udpPort.size() == 2);
+    //     assert(header.udpPort.size() == 2);
     ctx.udp_ports = {static_cast<uint16_t>(header.udpPort[0]),
                      static_cast<uint16_t>(header.udpPort[1])};
-    --threads_waiting_proc;
-    print(
-        "┏━━ Start Acquisition on receiver TCP port: {} (tid:{})\n\
-┃ UDP Ports:      {}\n\
-┃ Dynamic Range:  {}\n\
-┃ Detector Shape: {} x {}\n\
-┃ File Path:      {}\n\
-┃ File Name:      {}\n\
-┃ File Index:     {}\n\
-┃ Quad:           {}\n\
-┗ Additional Header: {}\n",
-        ctx.tcp_port,
-        std::this_thread::get_id(),
-        header.udpPort,
-        header.dynamicRange,
-        header.detectorShape.x,
-        header.detectorShape.y,
-        header.filePath,
-        header.fileName,
-        header.fileIndex,
-        header.quad,
-        header.addJsonHeader);
+    //     --threads_waiting_proc;
+    //     print(
+    //         "┏━━ Start Acquisition on receiver TCP port: {} (tid:{})\n\
+    // ┃ UDP Ports:      {}\n\
+    // ┃ Dynamic Range:  {}\n\
+    // ┃ Detector Shape: {} x {}\n\
+    // ┃ File Path:      {}\n\
+    // ┃ File Name:      {}\n\
+    // ┃ File Index:     {}\n\
+    // ┃ Quad:           {}\n\
+    // ┗ Additional Header: {}\n",
+    //         ctx.tcp_port,
+    //         std::this_thread::get_id(),
+    //         header.udpPort,
+    //         header.dynamicRange,
+    //         header.detectorShape.x,
+    //         header.detectorShape.y,
+    //         header.filePath,
+    //         header.fileName,
+    //         header.fileIndex,
+    //         header.quad,
+    //         header.addJsonHeader);
 
+    //     return 0;
     return 0;
 }
 
 // /** Acquisition Finished Call back */
 void EndAcq(const slsDetectorDefs::endCallbackHeader header, void *objectPointer) {
     auto &ctx = *reinterpret_cast<SLSReceiverContext *>(objectPointer);
-    print(
-        "┏━━ End Acquisition on receiver TCP port: {} (tid:{})\n"
-        "┃ UDP Ports:        {}\n"
-        "┃ Complete Frames:  {}\n"
-        "┃ Last Frame Index: {}\n"
-        "┗ Total processing time/frame: {:.2f} {:.2f} ms\n",
-        ctx.tcp_port,
-        std::this_thread::get_id(),
-        header.udpPort,
-        header.completeFrames,
-        header.lastFrameIndex,
+    print("Got End Acquisition from Receiver for ports: {}\n", ctx.udp_ports);
+    // ctx.udp_ports
+    // print(
+    //     "┏━━ End Acquisition on receiver TCP port: {} (tid:{})\n"
+    //     "┃ UDP Ports:        {}\n"
+    //     "┃ Complete Frames:  {}\n"
+    //     "┃ Last Frame Index: {}\n"
+    //     "┗ Total processing time/frame: {:.2f} {:.2f} ms\n",
+    //     ctx.tcp_port,
+    //     std::this_thread::get_id(),
+    //     header.udpPort,
+    //     header.completeFrames,
+    //     header.lastFrameIndex,
 
-        ctx.cumulative_time[0] * 1000.0 / header.completeFrames[0],
-        ctx.cumulative_time[1] * 1000.0 / header.completeFrames[1]);
+    //     ctx.cumulative_time[0] * 1000.0 / header.completeFrames[0],
+    //     ctx.cumulative_time[1] * 1000.0 / header.completeFrames[1]);
 
-    total_processing_time += ctx.cumulative_time[0] + ctx.cumulative_time[1];
+    // total_processing_time += ctx.cumulative_time[0] + ctx.cumulative_time[1];
 
-    bool was_pedestals = ctx.is_pedestals.has_value();
+    // bool was_pedestals = ctx.is_pedestals.has_value();
 
-    ++threads_waiting_proc;
+    // ++threads_waiting_proc;
 }
 
 void GotData(slsDetectorDefs::sls_receiver_header &header,
@@ -912,7 +959,6 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     auto port_instance = callbackHeader.udpPort == ctx.udp_ports[0] ? 0 : 1;
     auto &handler = *ctx.handlers[port_instance];
 
-    // assert(handler.try_emplace(header, {callbackHeader}, )
     ctx.skip_acquisition = !handler.pass_frame_into_handler(
         header.detHeader,
         {callbackHeader},
@@ -969,7 +1015,7 @@ auto do_live(Arguments &args) -> void {
           args.rx_port,
           args.rx_port + args.rx_listeners - 1);
     // Now we know how many workers, we can construct the global barrier
-    auto barrier = std::barrier{args.rx_listeners};
+    // auto barrier = std::barrier{args.rx_listeners};
     {
         std::vector<std::jthread> threads;
         for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
@@ -1008,49 +1054,61 @@ auto do_live(Arguments &args) -> void {
         // Do the live update handling - we manage state in this thread
         AcquisitionState state;
         size_t currently_active = 0;
-        size_t num_images_seen = 0;
-        size_t total_expected_images = 0;
-        size_t acquisition_number = 0;
+        size_t highest_index_image_seen = 0;
+        float current_progress = 0.0;
+
+        // Track the last time we printed, so that we don't refresh too fast
         auto last_print = std::chrono::steady_clock::now();
 
         while (true) {
-            if (!args.no_progress) {
-                if (feedback->wait_dequeue_timed(state, 80ms)) {
-                    if (std::holds_alternative<acqstate::Starting>(state)) {
-                        auto msg = std::get<acqstate::Starting>(state);
-                        currently_active += 1;
-                        print("Started receiver\n");
+            if (feedback->wait_dequeue_timed(state, 80ms)) {
+                if (std::holds_alternative<acqstate::Starting>(state)) {
+                    auto msg = std::get<acqstate::Starting>(state);
+                    if (currently_active == 0) {
+                        print("Started acquisition {}\n",
+                              styled(acquisition_number.load(), style::number));
+                    }
+                    currently_active += 1;
 
-                    } else if (std::holds_alternative<acqstate::ImageReceived>(state)) {
-                        auto msg = std::get<acqstate::ImageReceived>(state);
-                        num_images_seen += 1;
-                    } else if (std::holds_alternative<acqstate::Ended>(state)) {
-                        auto msg = std::get<acqstate::Ended>(state);
-                        num_images_seen = 0;
-                        currently_active -= 1;
-                        print("Ended receiver\n");
-                        if (currently_active == 0) {
-                            print("All receivers ender\n");
-                        }
+                } else if (std::holds_alternative<acqstate::ImageReceived>(state)) {
+                    auto msg = std::get<acqstate::ImageReceived>(state);
+                    if (msg.progress.has_value()) {
+                        current_progress =
+                            std::max(current_progress, msg.progress.value());
+                    }
+                    highest_index_image_seen =
+                        std::max(highest_index_image_seen, msg.frameIndex);
+                } else if (std::holds_alternative<acqstate::Ended>(state)) {
+                    auto msg = std::get<acqstate::Ended>(state);
+                    currently_active -= 1;
+                    if (currently_active == 0) {
+                        print("Acquisition {} complete.\n",
+                              styled(acquisition_number, style::number));
+                        acquisition_number += 1;
+                        highest_index_image_seen = 0;
+                        current_progress = 0;
                     }
                 }
+            }
+            // Only display live updates if they weren't turned off
+            if (!args.no_progress) {
                 // Have we had enough time elapse for an update?
                 auto elapsed = std::chrono::steady_clock::now() - last_print;
-                if (elapsed < 80ms) {
+                if (elapsed < 128ms) {
                     continue;
                 }
                 // We're due an output update
                 if (currently_active == 0) {
                     spinner("All listeners waiting");
                 } else {
-                    // In the middle of a collection, work out what to print
-                    auto msg =
-                        format(" {}: {} images\r", acquisition_number, num_images_seen);
-                    std::cout << msg << std::flush;
+                    // In the middle of a collection
+                    print("  {}: {:5.1f} % ({})\r",
+                          acquisition_number,
+                          current_progress,
+                          highest_index_image_seen);
+                    std::cout << std::flush;
                 }
             }
         }
-        // Only happens if we change to terminate
-        print("All processing complete.\n");
     }
 }
