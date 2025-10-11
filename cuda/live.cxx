@@ -499,16 +499,16 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         if (known_hmi != hmi) {
             // Update: We want to trying "pushing through" to see if the data are sensible
             // ... only print a warning (once), don't otherwise stop
-            if (bad_hmi_acq.value_or(424242) != header.acqIndex) {
+            if (!bad_hmi_acq.has_value()) {
                 print(style::warning,
                       "{}: Warning: Got fed mix of module index; hmi={} instead of "
                       "initial {} on frame {} are your streams "
-                      "crossed?",
+                      "crossed?\n",
                       _port,
                       hmi,
                       known_hmi,
                       header.frameIndex);
-                bad_hmi_acq = header.acqIndex;
+                bad_hmi_acq = header.frameIndex;
             }
         }
     }
@@ -729,6 +729,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     is_pedestal_mode = false;
     send_onwards = true;
     exposure_ns = 0;
+    bad_hmi_acq = std::nullopt;
 }
 
 #pragma region Main Loop
