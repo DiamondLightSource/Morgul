@@ -412,7 +412,8 @@ class DataStreamHandler {
   public:
     // Once we receive an HMI, we must always receive the same one
     std::optional<uint32_t> known_hmi;
-
+    /// The acquisition we last reported bad HMI on
+    std::optional<uint32_t> bad_hmi_acq;
     // Keep track of how many images we have seen/the highest index.
     // since the last end-packet.
     size_t num_images_seen = 0;
@@ -588,16 +589,19 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
         known_hmi = hmi;
     } else {
         if (known_hmi != hmi) {
-            print(style::error,
-                  "{}: Fatal Error: Got fed mix of module index; hmi={} instead of "
-                  "initial {} on frame {} are your routing "
-                  "crossed?",
-                  _port,
-                  hmi,
-                  known_hmi,
-                  header.frameIndex);
-            return false;
-            std::exit(1);
+            // Update: We want to trying "pushing through" to see if the data are sensible
+            // ... only print a warning (once), don't otherwise stop
+            if (!bad_hmi_acq.has_value()) {
+                print(style::warning,
+                      "{}: Warning: Got fed mix of module index; hmi={} instead of "
+                      "initial {} on frame {} are your streams "
+                      "crossed?\n",
+                      _port,
+                      hmi,
+                      known_hmi,
+                      header.frameIndex);
+                bad_hmi_acq = header.frameIndex;
+            }
         }
     }
     if (!header.dls.energy) {
@@ -797,6 +801,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     is_pedestal_mode = false;
     send_onwards = true;
     exposure_ns = 0;
+    bad_hmi_acq = std::nullopt;
 }
 
 #pragma region Main Loop

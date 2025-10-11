@@ -3,4 +3,4 @@
 	url = https://github.com/kiyo-masui/bitshuffle
 [submodule "modules/slsDetectorPackage"]
 	path = modules/slsDetectorPackage
-	url = https://github.com/slsdetectorgroup/slsDetectorPackage.git
+	url = https://github.com/ndevenish/slsDetectorPackage.git
