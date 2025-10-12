@@ -683,7 +683,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
             }
         }
     }
-    if (!header.dls.energy) {
+    if (!header.dls.energy && header.frameIndex == 0) {
         print(style::warning,
               "Warning: Do not have energy provided via addJsonHeader or otherwise\n");
     }
@@ -834,10 +834,9 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     if (send_onwards
         && zmq::send_multipart(_zmq_sender.value(), send_msgs) == std::nullopt) {
         print(style::warning,
-              "{}:{}: Warning: Failed to send onward message. Disabling send until end "
+              "{}: Warning: Failed to send onward message. Disabling send until end "
               "of "
               "acquisition.\n",
-              _port,
               header.udp_port);
         // Don't send any more this acquisition.
         send_onwards = false;
@@ -882,6 +881,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     send_onwards = true;
     exposure_ns = 0;
     bad_hmi_acq = std::nullopt;
+    print("{}: Ended acquisition\n", _port);
     // print(
     //     "┏━━ End Acquisition on receiver UDP port: {} (tid:{})\n"
     //     // "┃ UDP Ports:        {}\n"
@@ -995,7 +995,7 @@ void GotData(slsDetectorDefs::sls_receiver_header &header,
     assert(imageSize % sizeof(uint16_t) == 0);
     ctx.skip_acquisition = !handler.pass_frame_into_handler(
         SLSHeader::from_framedata(header, callbackHeader),
-        std::span(reinterpret_cast<uint16_t *>(dataPointer), imageSize));
+        std::span(reinterpret_cast<uint16_t *>(dataPointer), imageSize / 2));
     threads_receiving -= 1;
 }
 
@@ -1054,7 +1054,7 @@ auto do_live(Arguments &args) -> void {
         for (uint16_t port = args.rx_port; port < args.rx_port + args.rx_listeners;
              ++port) {
             uint16_t expected_udp_port = (port - args.rx_port) * 2 + 30000;
-            uint16_t zmq_port = (port - args.rx_port) * 2 + args.zmq_send_port + 1;
+            uint16_t zmq_port = (port - args.rx_port) * 2 + args.zmq_send_port;
 
             // Make two handlers for this receiver port
             auto handler_a = std::make_shared<DataStreamHandler>(
@@ -1138,7 +1138,7 @@ auto do_live(Arguments &args) -> void {
                     print("  {}: {:5.1f} % ({})\r",
                           acquisition_number,
                           current_progress,
-                          highest_index_image_seen);
+                          highest_index_image_seen + 1);
                     std::cout << std::flush;
                 }
             }
