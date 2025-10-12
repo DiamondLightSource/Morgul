@@ -577,10 +577,12 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
     if (send_onwards
         && zmq::send_multipart(_zmq_sender.value(), send_msgs) == std::nullopt) {
         print(style::warning,
-              "{}: Warning: Failed to send onward message. Disabling send until end "
+              "{}: Warning: Failed to send onward message for frame {}. Disabling send "
+              "until end "
               "of "
               "acquisition.\n",
-              header.udp_port);
+              header.udp_port,
+              header.frameIndex);
         // Don't send any more this acquisition.
         send_onwards = false;
     }
