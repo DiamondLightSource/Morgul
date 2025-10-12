@@ -24,6 +24,9 @@
 
 using namespace fmt;
 
+/// Location of some pedestal data to load. Make this automatic/specifiable later
+const auto PEDESTAL_DATA = std::filesystem::path{"/dev/shm/pedestals.h5"};
+
 /// Read the calibration log to find the correct calibration data sets
 auto get_applicable_calibration_paths(
     float exposure_time,
@@ -329,4 +332,137 @@ auto GainData::upload() -> void {
               _gpu_pitch);
         std::exit(1);
     }
+}
+
+#pragma region Pedestal Library
+
+PedestalsLibrary::PedestalsLibrary(Detector detector) : _detector(detector) {
+    assert(detector == JF1M);
+    // Try to load existing data from /dev/shm
+    auto store = std::filesystem::path{PEDESTAL_DATA};
+    if (std::filesystem::exists(store)) {
+        load_pedestal_cache(store);
+    }
+}
+
+auto PedestalsLibrary::load_pedestal_cache(std::filesystem::path path) -> bool {
+    std::optional<PedestalData> pd_;
+    try {
+        pd_ = PedestalData(path, _detector);
+    } catch (std::runtime_error err) {
+        print(style::warning, "Warning: Could not load pedestal data file {}\n", path);
+        return false;
+    }
+    auto pd = std::move(pd_).value();
+    auto [dx, dy] = DETECTOR_SIZE.at(_detector);
+    uint64_t exposure_ns = llrint(pd.exposure_time() * 1e9);
+    for (size_t m = 0; m < dx * dy * 2; ++m) {
+        auto &ped_0 = pd.get_pedestal(m, 0);
+        auto &ped_1 = pd.get_pedestal(m, 1);
+        auto &ped_2 = pd.get_pedestal(m, 2);
+        register_pedestals(exposure_ns, m, ped_0.data(), ped_1.data(), ped_2.data());
+    }
+    // print("Loaded prexisting {:.1} ms pedestals from {}\n",
+    //       styled(pd.exposure_time() * 1000, style::number),
+    //       styled(path, style::path));
+    return true;
+}
+
+bool PedestalsLibrary::has_pedestals(uint64_t exposure_ns,
+                                     uint8_t halfmodule_index) const {
+    return _gains.contains(exposure_ns)
+           && _gains.at(exposure_ns).contains(halfmodule_index);
+}
+auto PedestalsLibrary::get_gpu_ptrs(uint64_t exposure_ns,
+                                    uint8_t halfmodule_index) const
+    -> PedestalData::GainModePointers {
+    auto &lookup = _gains.at(exposure_ns).at(halfmodule_index);
+    return {lookup.at(0), lookup.at(1), lookup.at(2)};
+}
+
+void PedestalsLibrary::save_pedestals() {
+    if (_gains.size() == 0) return;
+    assert(_gains.size() == 1);
+    // Because HDF5, only allow us to do this one-at-a-time
+    static std::mutex hdf5_write_lock;
+    auto lock = std::scoped_lock(hdf5_write_lock);
+
+    auto file = H5Cleanup<H5Fclose>(
+        H5Fcreate("/dev/shm/pedestals.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT));
+    std::vector<PedestalsLibrary::pedestal_t> pedestal_host(HM_PIXELS);
+    for (auto [exp, hmod_map] : _gains) {
+        write_scalar_hdf5_value<float>(
+            file, "/exptime", static_cast<float>(exp) * 1e9f);
+        write_scalar_hdf5_value<std::string>(file, "/module_mode", {"half"});
+        for (auto [hmi, hm_gains] : hmod_map) {
+            auto group_name = fmt::format("hmi_{:02}", hmi);
+            auto hm_group = H5Cleanup<H5Gclose>(H5Gcreate(
+                file, group_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+            hsize_t dims[2]{HM_HEIGHT, HM_WIDTH};
+            auto space = H5Cleanup<H5Sclose>(H5Screate_simple(2, dims, nullptr));
+            for (auto [gain, pedestal_data] : hm_gains) {
+                auto ds_name = fmt::format("pedestal_{}", gain);
+                cudaMemcpyAsync(pedestal_host.data(), pedestal_data, HM_PIXELS, 0);
+                CUDA_CHECK(cudaDeviceSynchronize());
+                auto dset = H5Cleanup<H5Dclose>(H5Dcreate(hm_group,
+                                                          ds_name.c_str(),
+                                                          H5T_NATIVE_FLOAT,
+                                                          space,
+                                                          H5P_DEFAULT,
+                                                          H5P_DEFAULT,
+                                                          H5P_DEFAULT));
+                H5Dwrite(dset,
+                         H5T_NATIVE_FLOAT,
+                         H5S_ALL,
+                         H5S_ALL,
+                         H5P_DEFAULT,
+                         pedestal_host.data());
+            }
+        }
+    }
+}
+/// @brief Register a new set of pedestal data
+///
+/// Safe to call from multiple threads.
+void PedestalsLibrary::register_pedestals(uint64_t exposure_ns,
+                                          uint8_t halfmodule_index,
+                                          std::span<pedestal_t> pedestal_0,
+                                          std::span<pedestal_t> pedestal_1,
+                                          std::span<pedestal_t> pedestal_2) {
+    auto dev_0 = make_cuda_malloc<float>(HM_PIXELS);
+    auto dev_1 = make_cuda_malloc<float>(HM_PIXELS);
+    auto dev_2 = make_cuda_malloc<float>(HM_PIXELS);
+
+    {
+        std::scoped_lock lock(_write_guard);
+        // Safety: For now, only allow one pedestal to be registered
+        if (!_gains.contains(exposure_ns)) {
+            _gains.clear();
+        }
+        _gains[exposure_ns][halfmodule_index][0] = dev_0;
+        _gains[exposure_ns][halfmodule_index][1] = dev_1;
+        _gains[exposure_ns][halfmodule_index][2] = dev_2;
+    }
+    assert(pedestal_0.size() == HM_PIXELS);
+    assert(pedestal_1.size() == HM_PIXELS);
+    assert(pedestal_2.size() == HM_PIXELS);
+    cudaMemcpyAsync(dev_0, pedestal_0.data(), pedestal_0.size(), 0);
+    cudaMemcpyAsync(dev_1, pedestal_1.data(), pedestal_1.size(), 0);
+    cudaMemcpyAsync(dev_2, pedestal_2.data(), pedestal_2.size(), 0);
+
+    // CUDA_CHECK(cudaMemcpy(dev_0.get(),
+    //                       pedestal_0.data(),
+    //                       pedestal_0.size_bytes(),
+    //                       cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemcpy(dev_1.get(),
+    //                       pedestal_1.data(),
+    //                       pedestal_1.size_bytes(),
+    //                       cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemcpy(dev_2.get(),
+    //                       pedestal_2.data(),
+    //                       pedestal_2.size_bytes(),
+    //                       cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    print("Registering pedestals for {} ns {} hmi\n", exposure_ns, halfmodule_index);
 }

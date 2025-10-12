@@ -70,7 +70,12 @@ FetchContent_Declare(
     GIT_TAG 8b2176698e9bdaba653cdc20c32b54737a934b47 # v1.0.7
 )
 FetchContent_MakeAvailable(readerwriterqueue)
-
+FetchContent_Declare(
+    concurrentqueue
+    GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
+    GIT_TAG 6dd38b8a1dbaa7863aa907045f32308a56a6ff5d # v1.0.4
+)
+FetchContent_MakeAvailable(concurrentqueue)
 
 find_package(LZ4 REQUIRED)
 find_package(CUDAToolkit 12.2 REQUIRED)
@@ -79,7 +84,7 @@ find_package(lodepng REQUIRED)
 find_package(cppzmq REQUIRED)
 
 ensure_submodule(modules/bitshuffle)
-ensure_submodule(modules/slsDetectorPackage)
+# ensure_submodule(modules/slsDetectorPackage)
 add_subdirectory(modules/slsDetectorPackage)
 
 add_library(
@@ -100,6 +105,7 @@ add_library(
     cuda/live.cxx
     cuda/kernels.cu
     cuda/pedestal.cxx
+    cuda/util.cxx
 )
 target_link_libraries(
     libmorgul
@@ -117,6 +123,7 @@ target_link_libraries(
     zeus::expected
     slsReceiverShared
     readerwriterqueue
+    concurrentqueue
 )
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(libmorgul PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")

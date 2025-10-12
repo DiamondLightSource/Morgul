@@ -78,3 +78,32 @@ class GainData {
     std::map<size_t, std::map<uint8_t, Array2D<gain_t>>> _modules;
     std::map<size_t, GainModePointers> _gpu_modules;
 };
+
+class PedestalsLibrary {
+  public:
+    using pedestal_t = PedestalData::pedestal_t;
+
+    PedestalsLibrary(Detector detector);
+    auto load_pedestal_cache(std::filesystem::path path) -> bool;
+
+    bool has_pedestals(uint64_t exposure_ns, uint8_t halfmodule_index) const;
+    auto get_gpu_ptrs(uint64_t exposure_ns, uint8_t halfmodule_index) const
+        -> PedestalData::GainModePointers;
+
+    void save_pedestals();
+    /// @brief Register a new set of pedestal data
+    ///
+    /// Safe to call from multiple threads.
+    void register_pedestals(uint64_t exposure_ns,
+                            uint8_t halfmodule_index,
+                            std::span<pedestal_t> pedestal_0,
+                            std::span<pedestal_t> pedestal_1,
+                            std::span<pedestal_t> pedestal_2);
+
+  private:
+    std::map<uint64_t,
+             std::map<uint8_t, std::map<uint8_t, shared_device_ptr<pedestal_t[]>>>>
+        _gains;
+    const Detector _detector;
+    std::mutex _write_guard;
+};
