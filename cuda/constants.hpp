@@ -93,6 +93,18 @@ static const std::string JF9M_Display{
     "\e[1m\e[38;5;198mJ\e[39m\e[38;5;163mF\e[39m\e[38;5;129m9\e[39m\e[38;5;93mM\e["
     "39m\e[38;5;33m\e[39m\e[0m\n"};
 
+constexpr auto detector_display(const Detector d) -> std::string_view {
+    if (d == JF1M) {
+        return JF1M_Display;
+    } else if (d == JF9M_SIM) {
+        return JF9M_SIM_Display;
+    } else if (d == JF9M) {
+        return JF9M_Display;
+    } else {
+        return d;
+    }
+}
+
 #endif
 
 /// Names for gain modes
