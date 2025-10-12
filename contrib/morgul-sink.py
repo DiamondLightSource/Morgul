@@ -5,10 +5,10 @@
 #     "h5py",
 #     "hdf5plugin",
 #     "numpy",
-#     "zmq",
 #     "pydantic>2",
 #     "rich",
 #     "tqdm",
+#     "zmq",
 # ]
 # ///
 
@@ -333,10 +333,14 @@ class Writer:
             expected_images, num_images, filenames = self.do_acquisition()
             self.shared_filenames.extend(filenames)
             self.shared_counts[self.port] = (expected_images, num_images)
+            if expected_images != num_images:
+                print(
+                    f"Warning: Port {port} didn't get expected {expected_images} images, instead got {num_images}"
+                )
             first_out = self.barrier.wait() == 0
             if first_out and not self.stop.is_set():
                 self.started.clear()
-                print(self.shared_counts)
+                print({a: b for (a, b) in sorted(self.shared_counts.items())})
                 print(
                     f"Acquisition completed at {datetime.datetime.now().isoformat().replace('T', ' ')} with {num_images} images",
                     flush=True,
