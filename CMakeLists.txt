@@ -105,6 +105,7 @@ add_library(
     cuda/live.cxx
     cuda/kernels.cu
     cuda/pedestal.cxx
+    cuda/util.cxx
 )
 target_link_libraries(
     libmorgul
