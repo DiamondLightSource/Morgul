@@ -202,14 +202,17 @@ struct FrameData {
 };
 
 namespace acqstate {
-struct Starting {};
+struct Starting {
+    bool pedestal_mode;
+};
 struct ImageReceived {
     std::optional<float> progress;
     /// The current frame index within the current acquisition e.g. 0..number_of_images
     size_t frameIndex;
 };
-struct Ended {};
-
+struct Ended {
+    bool pedestal_mode;
+};
 }  // namespace acqstate
 
 using AcquisitionState =
@@ -367,7 +370,9 @@ auto DataStreamHandler::listen(std::stop_token stop) -> void {
             continue;
         }
         // We have the first frame! Send a message to say so.
-        _feedback->enqueue(acqstate::Starting{});
+        _feedback->enqueue(acqstate::Starting{
+            .pedestal_mode = is_pedestal_mode,
+        });
         process_frame(data.header, data.data);
 
         // Do the rest of the acquisition
@@ -384,7 +389,6 @@ auto DataStreamHandler::listen(std::stop_token stop) -> void {
                                         .frameIndex = data.header.frameIndex});
         }
         end_acquisition();
-        _feedback->enqueue(acqstate::Ended{});
     }
 }
 
@@ -461,6 +465,10 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
                       "Error: Pedestal mode on but no pedestal_loops set\n");
                 return false;
             }
+            print("{}: Running pedestal mode {}x{}\n",
+                  _port,
+                  header.dls.pedestal_frames.value(),
+                  header.dls.pedestal_loops.value());
         } else {
             if (!pedestals.has_pedestals(exposure_ns, known_hmi.value())
                 && !header.dls.raw) {
@@ -602,6 +610,7 @@ auto DataStreamHandler::end_acquisition() -> void {
     }
 
     if (is_pedestal_mode) {
+        print("{}: Finalizing pedestal mode\n", _port);
         std::vector<std::byte> pedestal_mask(HM_PIXELS);
         std::vector<PedestalsLibrary::pedestal_t> new_pedestals(HM_PIXELS
                                                                 * GAIN_MODES.size());
@@ -620,6 +629,9 @@ auto DataStreamHandler::end_acquisition() -> void {
                                      {new_pedestals.data() + HM_PIXELS, HM_PIXELS},
                                      {new_pedestals.data() + HM_PIXELS * 2, HM_PIXELS});
     }
+    _feedback->enqueue(acqstate::Ended{
+        .pedestal_mode = is_pedestal_mode,
+    });
     num_images_seen = 0;
     highest_image_seen = 0;
     is_pedestal_mode = false;
@@ -854,6 +866,10 @@ auto do_live(Arguments &args) -> void {
                     if (currently_active == 0) {
                         print("Acquisition {} complete.\n",
                               styled(acquisition_number, style::number));
+                        if (msg.pedestal_mode) {
+                            print("Saving pedestals\n");
+                            pedestals.save_pedestals();
+                        }
                         acquisition_number += 1;
                         highest_index_image_seen = 0;
                         current_progress = 0;
