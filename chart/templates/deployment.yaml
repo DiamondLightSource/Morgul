@@ -26,12 +26,12 @@ spec:
       {{- end }}
       containers:
         - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
           name: {{ .Release.Name }}
           args:
             - {{ .Values.morgul.hostName }}
-            - {{ .Values.morgul.firstPort }}
-            - {{ .Values.morgul.writers }}
+            - {{ .Values.morgul.firstPort | quote }}
+            - {{ .Values.morgul.writers | quote }}
             - --write
           env:
             {{- range $key, $value := .Values.extraEnv }}
