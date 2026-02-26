@@ -1,13 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ .Release.Name }}-writer
   namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{ .Release.Name }}
+      app: {{ .Release.Name }}-writer
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -15,9 +15,9 @@ spec:
       maxSurge: 0
   template:
     metadata:
-      name: {{ .Release.Name }}
+      name: {{ .Release.Name }}-writer
       labels:
-        app: {{ .Release.Name }}
+        app: {{ .Release.Name }}-writer
     spec:
       hostNetwork: true
       {{- if .Values.podSecurityContext }}
@@ -27,7 +27,7 @@ spec:
       containers:
         - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
-          name: {{ .Release.Name }}
+          name: {{ .Release.Name }}-writer
           args:
             - {{ .Values.morgul.hostName }}
             - {{ .Values.morgul.firstPort | quote }}
