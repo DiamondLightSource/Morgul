@@ -13,7 +13,7 @@ morgul:
 resources:
   limits:
     cpu: 36
-    memory: 10Gi
+    memory: 100Gi
 
 extraEnv:
   EPICS_CA_ADDR_LIST: "cs03r-cs-gate-01 bl24i-sc-gh-02"
@@ -32,12 +32,11 @@ tolerations:
 
 # Pod-level security context
 podSecurityContext:
-  # dls_softinst group
+  # i24detector group
   supplementalGroups:
-    - 37910
-    - 37948
+    - 37951
 
 # Container-level security context
 containerSecurityContext:
-  # k8s-i24-beamline user
-  runAsUser: 36145
+  # i24detector user
+  runAsUser: 37951
