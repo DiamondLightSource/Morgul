@@ -13,4 +13,4 @@ RUN uv sync --script contrib/morgul-sink.py
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-ENTRYPOINT ["uv", "run", "--script", "contrib/morgul-sink.py"]
+ENTRYPOINT ["python", "contrib/morgul-sink.py"]
