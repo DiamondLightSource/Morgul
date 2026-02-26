@@ -9,7 +9,7 @@ COPY morgul/ morgul/
 RUN uv sync --no-dev --no-editable
 
 COPY contrib/morgul-sink.py contrib/morgul-sink.py
-RUN uv sync --script contrib/morgul-sink.py
+RUN uv pip install h5py hdf5plugin numpy "pydantic>2" rich tqdm zmq
 
 ENV PATH="/app/.venv/bin:$PATH"
 
