@@ -1,0 +1,43 @@
+image:
+  repository: ghcr.io/diamondlightsource/morgul
+  tag: latest
+
+# Beamline configuration
+beamline: "i24"
+
+morgul:
+  hostName: bl24i-sc-gh-02
+  firstPort: 31001
+  writers: 36
+
+resources:
+  limits:
+    cpu: 36
+    memory: 10Gi
+
+extraEnv:
+  EPICS_CA_ADDR_LIST: "cs03r-cs-gate-01 bl24i-sc-gh-02"
+
+# Additional node selector labels
+nodeSelector:
+  kubernetes.io/hostname: "cs05r-i24-k8s-serv-02.diamond.ac.uk"
+
+tolerations:
+  - key: nodetype
+    value: gpu
+    effect: NoSchedule
+  - key: location
+    value: cs05r
+    effect: NoSchedule
+
+# Pod-level security context
+podSecurityContext:
+  # dls_softinst group
+  supplementalGroups:
+    - 37910
+    - 37948
+
+# Container-level security context
+containerSecurityContext:
+  # k8s-i24-beamline user
+  runAsUser: 36145
