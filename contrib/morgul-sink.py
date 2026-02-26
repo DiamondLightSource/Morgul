@@ -153,7 +153,7 @@ def get_filename_template(acquisition: int | str) -> str | None:
                 print(f"Max known acq is {max_acq}")
                 folder_number = max(max_acq + 1, acquisition)
         path = path / f"{folder_number:04}_{name}"
-    return str(path / (name + "{acquisition}_{stream:02}_{file_index:06}.h5"))
+    return str(path / (name + "_{stream:02}_{file_index:06}.h5"))
 
 
 class HDF5Writer:

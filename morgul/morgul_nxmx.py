@@ -33,6 +33,9 @@ BOLD = "\033[1m"
 ERR = "\033[1;31m"
 NC = "\033[0m"
 
+# The difference between the actual and measured detector distances
+DISTANCE_OFFSET = 7.057
+
 
 class AttrValue(BaseModel, Generic[T]):
     def __init__(self, value: T, **kwargs):
@@ -413,6 +416,9 @@ def nxmx(
         cp = json.loads(cp_file.read_bytes())
         energy = cp["energy_kev"]
         rotation_angle = cp["angular_increment_deg"]
+        detector_distance = pint.Quantity(
+            cp["detector_distance_mm"] + DISTANCE_OFFSET, "mm"
+        )
     elif energy is None:
         sys.exit(
             f"{ERR}Error: No collection_info.json file alongside h5, so you must pass energy{NC}"
@@ -454,10 +460,10 @@ def nxmx(
     # size_s, size_f = source.run["header/detector_0_number_of_pixel"]
     # size_s, size_f = 1062, 1028
     size_s, size_f = (3262, 3108)
-    detector_distance = pint.Quantity(207.456, "mm")
-    pixel_size = pint.Quantity(75, "microns")
+    detector_distance = detector_distance or pint.Quantity(207.057, "mm")
 
-    beam_center_sf_px = (1771.97, 1689.09)
+    pixel_size = pint.Quantity(75, "microns")
+    beam_center_sf_px = (1761.91, 1688.56)
     beam_center_sf_mm = tuple((x * pixel_size).to("m") for x in beam_center_sf_px)
 
     detector = NXdetector(

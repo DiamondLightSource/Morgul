@@ -10,6 +10,7 @@ from morgul.util import BOLD, NC, R, Y
 from . import (
     config,
     morgul_correct,
+    morgul_dcid,
     morgul_gainmap,
     morgul_mask,
     morgul_merge,
@@ -79,6 +80,7 @@ CALIBRATION = "Calibration and Correction"
 UTILITIES = "Utilities"
 
 app.command(rich_help_panel=UTILITIES)(morgul_gainmap.gainmap)
+app.command(rich_help_panel=UTILITIES)(morgul_dcid.dcid)
 app.command(rich_help_panel=CALIBRATION)(morgul_pedestal.pedestal)
 app.command(rich_help_panel=CALIBRATION)(morgul_mask.mask)
 app.command(rich_help_panel=CALIBRATION)(morgul_correct.correct)
