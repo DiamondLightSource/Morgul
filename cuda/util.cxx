@@ -87,7 +87,7 @@ int spinner(const std::string_view &message) {
     };
     index = (index + 1) % ball.size();
     std::string msg = fmt::format("  {} {}\r", message, ball[index]);
-    std::cout << msg << std::flush;
+    std::cerr << msg << std::flush;
     return msg.size();
 }
 
