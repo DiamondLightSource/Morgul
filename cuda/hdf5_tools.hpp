@@ -86,16 +86,17 @@ auto read_single_hdf5_value(hid_t root_group, std::string path)
     if (dt_class == H5T_INTEGER) {
         // Validate data type conversions for now. This is a bit annoying
         // but probably safer than just blindly assuming the conversion works.
-        if ((native_type == H5T_NATIVE_CHAR || native_type == H5T_NATIVE_SHORT
-             || native_type == H5T_NATIVE_INT || native_type == H5T_NATIVE_LONG
-             || native_type == H5T_NATIVE_LLONG)
-            && !std::is_signed_v<T>) {
+        // Note: the native type is a freshly allocated id rather than the
+        // predefined H5T_NATIVE_* constant, so it must be interrogated rather
+        // than compared against them.
+        auto sign = H5Tget_sign(native_type);
+        if (sign == H5T_SGN_ERROR) {
+            return zeus::unexpected("Could not get integer data type sign");
+        }
+        if (sign == H5T_SGN_2 && !std::is_signed_v<T>) {
             return zeus::unexpected("Will not copy signed to unsigned");
         }
-        if ((native_type == H5T_NATIVE_UCHAR || native_type == H5T_NATIVE_USHORT
-             || native_type == H5T_NATIVE_UINT || native_type == H5T_NATIVE_ULONG
-             || native_type == H5T_NATIVE_ULLONG)
-            && std::is_signed_v<T>) {
+        if (sign == H5T_SGN_NONE && std::is_signed_v<T>) {
             return zeus::unexpected("Will not copy unsigned data into signed");
         }
         if (native_size != sizeof(T)) {
