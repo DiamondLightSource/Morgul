@@ -81,9 +81,6 @@ auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
 /// The product of wavelength (A) and photon energy (keV)
 constexpr static double WAVELENGTH_ENERGY_PRODUCT = 12.39841984055037;
 
-/// Photon energy (keV) assumed if we have no other source for it
-constexpr static double DEFAULT_ENERGY_KEV = 12.4;
-
 /// PV holding the beam wavelength (A), used as a fallback when the incoming
 /// header packet does not tell us the wavelength.
 constexpr static auto WAVELENGTH_PV = "BL24I-MO-DCM-01:WAVELENGTH.RBV";
@@ -149,20 +146,19 @@ auto energy_from_epics() -> std::optional<double> {
     auto value = caget(WAVELENGTH_PV);
     if (!value) {
         print(style::error,
-              "Error: Could not read {} from EPICS; assuming {} keV\n",
-              WAVELENGTH_PV,
-              DEFAULT_ENERGY_KEV);
+              "Error: Could not read {} from EPICS; cannot correct data without an "
+              "energy.\n",
+              WAVELENGTH_PV);
         return std::nullopt;
     }
     char *parse_end = nullptr;
     double wavelength_angstrom = std::strtod(value->c_str(), &parse_end);
     if (parse_end == value->c_str() || wavelength_angstrom <= 0) {
         print(style::error,
-              "Error: Could not read a wavelength out of {} value '{}'; assuming {} "
-              "keV\n",
+              "Error: Could not read a wavelength out of {} value '{}'; cannot "
+              "correct data without an energy.\n",
               WAVELENGTH_PV,
-              *value,
-              DEFAULT_ENERGY_KEV);
+              *value);
         return std::nullopt;
     }
     looked_up_energy = WAVELENGTH_ENERGY_PRODUCT / wavelength_angstrom;
@@ -490,10 +486,15 @@ auto DataStreamHandler::validate_header(SLSHeader &header) -> bool {
             }
         }
     }
-    // The header packet is the primary source of energy. If it didn't give us
-    // one, and we are actually going to use it, fall back to asking EPICS.
+    // The header packet is the primary source of energy, falling back to EPICS.
+    // Raw and pedestal data are passed through uncorrected, so only insist on
+    // having an energy when we are actually going to correct with it.
     if (!header.dls.energy && !header.dls.raw && !header.dls.pedestal) {
         header.dls.energy = energy_from_epics();
+        if (!header.dls.energy) {
+            // energy_from_epics has already reported why, once per acquisition
+            return false;
+        }
     }
 
     // Paranoia: Look for pedestal flag changing partway through stream.
@@ -559,7 +560,6 @@ auto DataStreamHandler::validate_header(SLSHeader &header) -> bool {
 auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       const std::span<uint16_t> &frame) -> void {
     auto time_frame = Timer();
-    auto energy = header.dls.energy.value_or(DEFAULT_ENERGY_KEV);
 
     if (header.dls.raw) {
         // We want raw, uncorrected data. Just copy it over.
@@ -590,7 +590,7 @@ auto DataStreamHandler::process_frame(const SLSHeader &header,
             pedestals.get_gpu_ptrs(exposure_ns, known_hmi.value()),
             frame.data(),
             dev_output_buffer,
-            energy);
+            header.dls.energy.value());
         stats_correct += timer_corr.get_elapsed_seconds();
     }
     // Construct the HDF5 header so that we can do direct chunk write
