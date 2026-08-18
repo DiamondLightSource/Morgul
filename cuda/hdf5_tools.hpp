@@ -75,12 +75,14 @@ auto read_single_hdf5_value(hid_t root_group, std::string path)
             "Unexpected data class type; can only handle integer/non-integer");
     }
 
-    size_t datatype_size = H5Tget_size(datatype);
     auto native_type =
         H5Cleanup<H5Tclose>(H5Tget_native_type(datatype, H5T_DIR_DEFAULT));
     size_t native_size = H5Tget_size(native_type);
 
-    hid_t read_datatype = datatype;
+    // Read as the native type, not the on-disk one; passing the on-disk type as
+    // the memory type means HDF5 does no conversion at all, so e.g. big-endian
+    // data would come back byte-swapped.
+    hid_t read_datatype = native_type;
     if (dt_class == H5T_INTEGER) {
         // Validate data type conversions for now. This is a bit annoying
         // but probably safer than just blindly assuming the conversion works.
@@ -96,10 +98,10 @@ auto read_single_hdf5_value(hid_t root_group, std::string path)
             && std::is_signed_v<T>) {
             return zeus::unexpected("Will not copy unsigned data into signed");
         }
-        if (datatype_size != sizeof(T)) {
+        if (native_size != sizeof(T)) {
             return zeus::unexpected(
                 fmt::format("Data type size mismatch: Trying to copy size {} into {}",
-                            datatype_size,
+                            native_size,
                             sizeof(T)));
         }
     } else {
