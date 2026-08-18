@@ -12,6 +12,14 @@ inline float atomic_fetch_max(std::atomic<float> &obj, float arg) noexcept;
 auto getenv_or(std::string name, std::optional<std::string> _default = std::nullopt)
     -> std::optional<std::string>;
 
+/// @brief Read the value of an EPICS PV, using the caget command-line tool.
+///
+/// @param pv       The PV to read. This is passed through a shell, so must not
+///                 be built out of untrusted input.
+/// @param timeout  How long, in seconds, to let caget wait for a reply.
+/// @returns The value of the PV, or nullopt if it could not be read.
+auto caget(const std::string &pv, double timeout = 2.0) -> std::optional<std::string>;
+
 auto rfc3339_now() -> std::string;
 
 auto get_thread_name() -> std::string;

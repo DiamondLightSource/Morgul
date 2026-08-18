@@ -7,7 +7,9 @@
 #include <fmt/std.h>
 #include <pthread.h>
 
+#include <array>
 #include <chrono>
+#include <cstdio>
 #include <iostream>
 
 using namespace fmt;
@@ -100,4 +102,27 @@ auto read_boolish(std::string value) -> bool {
             fmt::format("Got non-boolish json value: '{}'", value));
     }
     return value == "true";
+}
+
+auto caget(const std::string &pv, double timeout) -> std::optional<std::string> {
+    // -t drops the PV name from the output, -w bounds how long we block for
+    auto command = fmt::format("caget -t -w {} '{}' 2>/dev/null", timeout, pv);
+    FILE *pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return std::nullopt;
+    }
+    std::string output;
+    std::array<char, 256> buffer;
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+        output += buffer.data();
+    }
+    if (pclose(pipe) != 0) {
+        return std::nullopt;
+    }
+    // Trim the surrounding whitespace, including the trailing newline
+    auto begin = output.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) {
+        return std::nullopt;
+    }
+    return output.substr(begin, output.find_last_not_of(" \t\r\n") - begin + 1);
 }

@@ -78,6 +78,16 @@ auto start_zmq_sender(zmq::context_t &context, uint16_t port) -> zmq::socket_t {
 
 #pragma region Header Parsing
 
+/// The product of wavelength (A) and photon energy (keV)
+constexpr static double WAVELENGTH_ENERGY_PRODUCT = 12.39841984055037;
+
+/// Photon energy (keV) assumed if we have no other source for it
+constexpr static double DEFAULT_ENERGY_KEV = 12.4;
+
+/// PV holding the beam wavelength (A), used as a fallback when the incoming
+/// header packet does not tell us the wavelength.
+constexpr static auto WAVELENGTH_PV = "BL24I-MO-DCM-01:WAVELENGTH.RBV";
+
 struct DLSHeaderAdditions {
     bool pedestal = false;
     /// @brief Photon Energy (KeV)
@@ -98,7 +108,7 @@ struct DLSHeaderAdditions {
         if (raw.find("wavelength") != raw.end()) {
             auto value = raw.at("wavelength");
             double wavelength_angstrom = std::strtod(value.c_str(), nullptr);
-            double energy_kev = 12.39841984055037 / wavelength_angstrom;
+            double energy_kev = WAVELENGTH_ENERGY_PRODUCT / wavelength_angstrom;
             out.energy = energy_kev;
         }
         if (raw.find("pedestal_frames") != raw.end()) {
@@ -112,6 +122,56 @@ struct DLSHeaderAdditions {
         return out;
     }
 };
+
+/// @brief Read the beam energy from EPICS, for when the header packet lacks it.
+///
+/// The PV is only read once per acquisition, and the result shared between all
+/// of the handler threads, so that we neither spam EPICS nor block the
+/// receiving threads on more than the first frame of an acquisition.
+///
+/// @returns The photon energy in keV, or nullopt if the PV could not be read.
+auto energy_from_epics() -> std::optional<double> {
+    static std::mutex lookup_mutex;
+    static std::optional<int> looked_up_acquisition;
+    static std::optional<double> looked_up_energy;
+
+    std::scoped_lock lock{lookup_mutex};
+    int acquisition = acquisition_number.load();
+    if (looked_up_acquisition == acquisition) {
+        return looked_up_energy;
+    }
+    looked_up_acquisition = acquisition;
+    looked_up_energy = std::nullopt;
+
+    print(style::warning,
+          "Warning: No wavelength in header packet; reading {} from EPICS instead\n",
+          WAVELENGTH_PV);
+    auto value = caget(WAVELENGTH_PV);
+    if (!value) {
+        print(style::error,
+              "Error: Could not read {} from EPICS; assuming {} keV\n",
+              WAVELENGTH_PV,
+              DEFAULT_ENERGY_KEV);
+        return std::nullopt;
+    }
+    char *parse_end = nullptr;
+    double wavelength_angstrom = std::strtod(value->c_str(), &parse_end);
+    if (parse_end == value->c_str() || wavelength_angstrom <= 0) {
+        print(style::error,
+              "Error: Could not read a wavelength out of {} value '{}'; assuming {} "
+              "keV\n",
+              WAVELENGTH_PV,
+              *value,
+              DEFAULT_ENERGY_KEV);
+        return std::nullopt;
+    }
+    looked_up_energy = WAVELENGTH_ENERGY_PRODUCT / wavelength_angstrom;
+    print("Read wavelength {:.5f} A from {}, using energy {:.4f} keV\n",
+          styled(wavelength_angstrom, style::number),
+          WAVELENGTH_PV,
+          styled(looked_up_energy.value(), style::number));
+    return looked_up_energy;
+}
 
 /// @brief Unified header object, representing possible data from all routes
 class SLSHeader {
@@ -291,7 +351,7 @@ class DataStreamHandler {
         return _frames;
     }
 
-    auto validate_header(const SLSHeader &header) -> bool;
+    auto validate_header(SLSHeader &header) -> bool;
     auto start_acquisition() -> void;
     auto process_frame(const SLSHeader &header, const std::span<uint16_t> &frame)
         -> void;
@@ -394,7 +454,7 @@ auto DataStreamHandler::listen(std::stop_token stop) -> void {
 
 #pragma region Validate Header
 
-auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
+auto DataStreamHandler::validate_header(SLSHeader &header) -> bool {
     // Once per acquisition, the first thread through gets this flag
     bool _expected = true;
 
@@ -430,9 +490,10 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
             }
         }
     }
-    if (!header.dls.energy && header.frameIndex == 0) {
-        print(style::warning,
-              "Warning: Do not have energy provided via addJsonHeader or otherwise\n");
+    // The header packet is the primary source of energy. If it didn't give us
+    // one, and we are actually going to use it, fall back to asking EPICS.
+    if (!header.dls.energy && !header.dls.raw && !header.dls.pedestal) {
+        header.dls.energy = energy_from_epics();
     }
 
     // Paranoia: Look for pedestal flag changing partway through stream.
@@ -498,7 +559,7 @@ auto DataStreamHandler::validate_header(const SLSHeader &header) -> bool {
 auto DataStreamHandler::process_frame(const SLSHeader &header,
                                       const std::span<uint16_t> &frame) -> void {
     auto time_frame = Timer();
-    auto energy = header.dls.energy.value_or(12.4);
+    auto energy = header.dls.energy.value_or(DEFAULT_ENERGY_KEV);
 
     if (header.dls.raw) {
         // We want raw, uncorrected data. Just copy it over.
