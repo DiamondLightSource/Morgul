@@ -102,14 +102,21 @@ auto read_single_hdf5_value(hid_t root_group, std::string path)
                             datatype_size,
                             sizeof(T)));
         }
+    } else {
+        // Anything that is not integer or float was rejected above, so this is
+        // H5T_FLOAT. We always read those into a double, so we must ask HDF5 to
+        // convert to that; otherwise reading e.g. a 4-byte float dataset only
+        // fills half of the output and we get garbage.
+        read_datatype = H5T_NATIVE_DOUBLE;
     }
 
     // If native type double, we want to read that, even if we've been asked
     // for a float by the template instantiator. The caller probably doesn't
-    // care if the data is declared as float or double internally.
-    typename std::conditional<std::is_same_v<T, float>, double, T>::type output;
+    // care if the data is declared as float or double internally. This must
+    // cover every floating point T, to match the H5T_NATIVE_DOUBLE above.
+    std::conditional_t<std::is_floating_point_v<T>, double, T> output;
 
-    if (H5Dread(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &output) < 0) {
+    if (H5Dread(dataset, read_datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &output) < 0) {
         throw std::runtime_error("Failed to read dataset");
         return zeus::unexpected("Failed to read dataset");
     }

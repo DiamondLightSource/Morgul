@@ -391,8 +391,9 @@ void PedestalsLibrary::save_pedestals() {
         H5Fcreate("/dev/shm/pedestals.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT));
     std::vector<PedestalsLibrary::pedestal_t> pedestal_host(HM_PIXELS);
     for (auto [exp, hmod_map] : _gains) {
+        // Note: exp is in ns, but /exptime is stored in seconds
         write_scalar_hdf5_value<float>(
-            file, "/exptime", static_cast<float>(exp) * 1e9f);
+            file, "/exptime", static_cast<float>(exp) * 1e-9f);
         write_scalar_hdf5_value<std::string>(file, "/module_mode", {"half"});
         for (auto [hmi, hm_gains] : hmod_map) {
             auto group_name = fmt::format("hmi_{:02}", hmi);
