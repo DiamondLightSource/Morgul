@@ -387,39 +387,57 @@ void PedestalsLibrary::save_pedestals() {
     static std::mutex hdf5_write_lock;
     auto lock = std::scoped_lock(hdf5_write_lock);
 
-    auto file = H5Cleanup<H5Fclose>(
-        H5Fcreate("/dev/shm/pedestals.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT));
-    std::vector<PedestalsLibrary::pedestal_t> pedestal_host(HM_PIXELS);
-    for (auto [exp, hmod_map] : _gains) {
-        // Note: exp is in ns, but /exptime is stored in seconds
-        write_scalar_hdf5_value<float>(
-            file, "/exptime", static_cast<float>(exp) * 1e-9f);
-        write_scalar_hdf5_value<std::string>(file, "/module_mode", {"half"});
-        for (auto [hmi, hm_gains] : hmod_map) {
-            auto group_name = fmt::format("hmi_{:02}", hmi);
-            auto hm_group = H5Cleanup<H5Gclose>(H5Gcreate(
-                file, group_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
-            hsize_t dims[2]{HM_HEIGHT, HM_WIDTH};
-            auto space = H5Cleanup<H5Sclose>(H5Screate_simple(2, dims, nullptr));
-            for (auto [gain, pedestal_data] : hm_gains) {
-                auto ds_name = fmt::format("pedestal_{}", gain);
-                cudaMemcpyAsync(pedestal_host.data(), pedestal_data, HM_PIXELS, 0);
-                CUDA_CHECK(cudaDeviceSynchronize());
-                auto dset = H5Cleanup<H5Dclose>(H5Dcreate(hm_group,
-                                                          ds_name.c_str(),
-                                                          H5T_NATIVE_FLOAT,
-                                                          space,
-                                                          H5P_DEFAULT,
-                                                          H5P_DEFAULT,
-                                                          H5P_DEFAULT));
-                H5Dwrite(dset,
-                         H5T_NATIVE_FLOAT,
-                         H5S_ALL,
-                         H5S_ALL,
-                         H5P_DEFAULT,
-                         pedestal_host.data());
+    // A failed cache write must not take the acquisition down with it; the
+    // pedestals we hold are still valid, we just cannot save them for reuse.
+    try {
+        auto file = H5Cleanup<H5Fclose>(H5Fcreate(
+            "/dev/shm/pedestals.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT));
+        if (file == H5I_INVALID_HID) {
+            throw std::runtime_error("Could not create /dev/shm/pedestals.h5");
+        }
+        std::vector<PedestalsLibrary::pedestal_t> pedestal_host(HM_PIXELS);
+        for (auto [exp, hmod_map] : _gains) {
+            // Note: exp is in ns, but /exptime is stored in seconds
+            write_scalar_hdf5_value<float>(
+                file, "/exptime", static_cast<float>(exp) * 1e-9f);
+            write_scalar_hdf5_value<std::string>(file, "/module_mode", {"half"});
+            for (auto [hmi, hm_gains] : hmod_map) {
+                auto group_name = fmt::format("hmi_{:02}", hmi);
+                auto hm_group = H5Cleanup<H5Gclose>(H5Gcreate(
+                    file, group_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+                if (hm_group == H5I_INVALID_HID) {
+                    throw std::runtime_error(
+                        fmt::format("Could not create group {}", group_name));
+                }
+                hsize_t dims[2]{HM_HEIGHT, HM_WIDTH};
+                auto space = H5Cleanup<H5Sclose>(H5Screate_simple(2, dims, nullptr));
+                for (auto [gain, pedestal_data] : hm_gains) {
+                    auto ds_name = fmt::format("pedestal_{}", gain);
+                    cudaMemcpyAsync(pedestal_host.data(), pedestal_data, HM_PIXELS, 0);
+                    CUDA_CHECK(cudaDeviceSynchronize());
+                    auto dset = H5Cleanup<H5Dclose>(H5Dcreate(hm_group,
+                                                              ds_name.c_str(),
+                                                              H5T_NATIVE_FLOAT,
+                                                              space,
+                                                              H5P_DEFAULT,
+                                                              H5P_DEFAULT,
+                                                              H5P_DEFAULT));
+                    if (dset == H5I_INVALID_HID
+                        || H5Dwrite(dset,
+                                    H5T_NATIVE_FLOAT,
+                                    H5S_ALL,
+                                    H5S_ALL,
+                                    H5P_DEFAULT,
+                                    pedestal_host.data())
+                               < 0) {
+                        throw std::runtime_error(
+                            fmt::format("Could not write {}/{}", group_name, ds_name));
+                    }
+                }
             }
         }
+    } catch (const std::runtime_error &e) {
+        print(style::error, "Error: Failed to save pedestal cache: {}\n", e.what());
     }
 }
 /// @brief Register a new set of pedestal data

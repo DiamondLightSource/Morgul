@@ -119,6 +119,11 @@ auto write_scalar_hdf5_value<std::string>(hid_t root_group,
                                                  H5P_DEFAULT,
                                                  H5P_DEFAULT,
                                                  H5P_DEFAULT));
+    if (dataset == H5I_INVALID_HID) {
+        throw std::runtime_error(fmt::format("Failed to create dataset {}", path));
+    }
     const char *data = value.c_str();
-    auto ret = H5Dwrite(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &data);
+    if (H5Dwrite(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, &data) < 0) {
+        throw std::runtime_error(fmt::format("Failed to write dataset {}", path));
+    }
 }
