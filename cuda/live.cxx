@@ -83,7 +83,17 @@ constexpr static double WAVELENGTH_ENERGY_PRODUCT = 12.39841984055037;
 
 /// PV holding the beam wavelength (A), used as a fallback when the incoming
 /// header packet does not tell us the wavelength.
-constexpr static auto WAVELENGTH_PV = "BL24I-MO-DCM-01:WAVELENGTH.RBV";
+constexpr static auto DEFAULT_WAVELENGTH_PV = "BL24I-MO-DCM-01:WAVELENGTH.RBV";
+
+/// Environment variable to read a different wavelength PV from
+constexpr static auto WAVELENGTH_PV_ENV = "MORGUL_PV_WAVELENGTH";
+
+/// @brief The PV to read the beam wavelength (A) from
+auto wavelength_pv() -> const std::string & {
+    static const std::string pv =
+        getenv_or(WAVELENGTH_PV_ENV, DEFAULT_WAVELENGTH_PV).value();
+    return pv;
+}
 
 struct DLSHeaderAdditions {
     bool pedestal = false;
@@ -142,13 +152,14 @@ auto energy_from_epics() -> std::optional<double> {
 
     print(style::warning,
           "Warning: No wavelength in header packet; reading {} from EPICS instead\n",
-          WAVELENGTH_PV);
-    auto value = caget(WAVELENGTH_PV);
+          wavelength_pv());
+    auto value = caget(wavelength_pv());
     if (!value) {
         print(style::error,
               "Error: Could not read {} from EPICS; cannot correct data without an "
-              "energy.\n",
-              WAVELENGTH_PV);
+              "energy. Set {} to read a different PV.\n",
+              wavelength_pv(),
+              WAVELENGTH_PV_ENV);
         return std::nullopt;
     }
     char *parse_end = nullptr;
@@ -156,15 +167,16 @@ auto energy_from_epics() -> std::optional<double> {
     if (parse_end == value->c_str() || wavelength_angstrom <= 0) {
         print(style::error,
               "Error: Could not read a wavelength out of {} value '{}'; cannot "
-              "correct data without an energy.\n",
-              WAVELENGTH_PV,
-              *value);
+              "correct data without an energy. Set {} to read a different PV.\n",
+              wavelength_pv(),
+              *value,
+              WAVELENGTH_PV_ENV);
         return std::nullopt;
     }
     looked_up_energy = WAVELENGTH_ENERGY_PRODUCT / wavelength_angstrom;
     print("Read wavelength {:.5f} A from {}, using energy {:.4f} keV\n",
           styled(wavelength_angstrom, style::number),
-          WAVELENGTH_PV,
+          wavelength_pv(),
           styled(looked_up_energy.value(), style::number));
     return looked_up_energy;
 }
