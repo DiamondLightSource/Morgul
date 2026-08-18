@@ -53,6 +53,10 @@ PV_COUNT = os.getenv("MORGUL_PV_COUNT") or "BL24I-JUNGFRAU-META:FD:NumCapture_RB
 PV_CAPTURED = os.getenv("MORGUL_PV_CAPTURED") or "BL24I-JUNGFRAU-META:FD:NumCaptured"
 PV_SUBFOLDER = os.getenv("MORGUL_PV_SUBFOLDER") or "BL24I-JUNGFRAU-META:FD:Subfolder"
 PV_READY = os.getenv("MORGUL_PV_READY") or "BL24I-JUNGFRAU-META:FD:Ready"
+PV_WAVELENGTH = os.getenv("MORGUL_PV_WAVELENGTH") or "BL24I-MO-DCM-01:WAVELENGTH.RBV"
+
+# The product of wavelength (Å) and photon energy (keV)
+WAVELENGTH_ENERGY_PRODUCT = 12.39841984055037
 
 
 CAGET_EXE = shutil.which("caget")
@@ -110,10 +114,9 @@ def caput(pv, value: str | int | float) -> None:
     )
 
 
-def read_energy_kev() -> float:
-    return 12.39841984055037 / float(
-        caget("BL24I-MO-DCM-01:ENERGY.RBV", extra_args=["-f5"])
-    )
+def read_wavelength_angstrom() -> float:
+    """Read the beam wavelength, in Angstrom, from the monochromator."""
+    return float(caget(PV_WAVELENGTH, extra_args=["-f5"]))
 
 
 class Header(BaseModel):
@@ -180,7 +183,7 @@ class HDF5Writer:
         self.header = header
         self.stream_index = stream_index
         self.filenames: list[Path] = []
-        self.energy_kev = read_energy_kev()
+        self.wavelength_angstrom = read_wavelength_angstrom()
 
     def _get_filename(self, image_index: int) -> Path:
         return Path(
@@ -375,7 +378,7 @@ class Writer:
                         MORGUL_EXE,
                         "nxmx",
                         "--energy",
-                        str(read_energy_kev()),
+                        str(WAVELENGTH_ENERGY_PRODUCT / read_wavelength_angstrom()),
                         *shared_filenames,
                     ]
                     print(f"+ {' '.join(str(x) for x in cmd)}")
